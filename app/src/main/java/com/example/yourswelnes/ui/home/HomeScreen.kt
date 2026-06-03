@@ -17,15 +17,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,19 +41,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 
-/**
- * Home screen UI implementation (Phase 1) — UI only, no location or camera behaviour.
- * Produces a layout that matches the provided design: top icons, centered profile
- * image and name, and a rounded square action button at the bottom center.
- */
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel = viewModel(),
+    viewModel: HomeViewModel = hiltViewModel(),
     onCameraClick: () -> Unit = {},
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
+    onDashboardClick: () -> Unit = {},
     onFabClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -58,10 +58,12 @@ fun HomeScreen(
         onCameraClick = onCameraClick,
         onNotificationsClick = onNotificationsClick,
         onLogoutClick = onLogoutClick,
+        onLogoutConfirmed = viewModel::onLogoutConfirmed,
+        onLogoutDismissed = viewModel::onLogoutDismissed,
+        onDashboardClick = onDashboardClick,
         onFabClick = onFabClick
     )
 }
-
 
 @Composable
 fun HomeScreenContent(
@@ -69,9 +71,15 @@ fun HomeScreenContent(
     onCameraClick: () -> Unit = {},
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
+    onLogoutConfirmed: () -> Unit = {},
+    onLogoutDismissed: () -> Unit = {},
+    onDashboardClick: () -> Unit = {},
     onFabClick: () -> Unit = {}
 ) {
-    // Background gradient similar to the reference design (soft pink -> white)
+    if (uiState.showLogoutDialog) {
+        LogoutDialog(onConfirm = onLogoutConfirmed, onDismiss = onLogoutDismissed)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -97,13 +105,23 @@ fun HomeScreenContent(
 
             Spacer(modifier = Modifier.height(80.dp))
 
-            ProfileHeader(userName = uiState.userName)
+            ProfileHeader(
+                userName = uiState.userName,
+                clubName = uiState.clubName,
+                isLoadingClub = uiState.isLoading
+            )
 
-            // flexible empty space to push FAB toward bottom like the design
+            Spacer(modifier = Modifier.height(28.dp))
+
+            DashboardCard(
+                isLoading = uiState.isDashboardLoading,
+                errorMessage = uiState.dashboardError,
+                onClick = onDashboardClick
+            )
+
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        // Bottom white bar to match the design's lower sheet
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -112,9 +130,7 @@ fun HomeScreenContent(
             color = Color.White,
             shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
             tonalElevation = 2.dp
-        ) {
-            // intentionally empty - acts as background for the FAB
-        }
+        ) {}
 
         BottomSquareButton(
             modifier = Modifier
@@ -122,6 +138,70 @@ fun HomeScreenContent(
                 .offset(y = (-30).dp),
             onClick = onFabClick
         )
+    }
+}
+
+@Composable
+private fun DashboardCard(
+    isLoading: Boolean,
+    errorMessage: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(4.dp, shape = RoundedCornerShape(16.dp))
+                .clickable(enabled = !isLoading, onClick = onClick),
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF2F80ED),
+            tonalElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "My Dashboard",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Open web portal",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.80f)
+                    )
+                }
+
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.5.dp,
+                        color = Color.White
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
+        if (!errorMessage.isNullOrBlank()) {
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+            )
+        }
     }
 }
 
@@ -177,7 +257,11 @@ private fun HomeTopBar(
 }
 
 @Composable
-private fun ProfileHeader(userName: String) {
+private fun ProfileHeader(
+    userName: String,
+    clubName: String,
+    isLoadingClub: Boolean
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             shape = CircleShape,
@@ -202,6 +286,22 @@ private fun ProfileHeader(userName: String) {
             fontWeight = FontWeight.Bold,
             color = Color(0xFF222222)
         )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (isLoadingClub) {
+            Text(
+                text = "Loading club details...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray
+            )
+        } else if (clubName.isNotEmpty()) {
+            Text(
+                text = clubName,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color(0xFF666666)
+            )
+        }
     }
 }
 
@@ -224,14 +324,28 @@ private fun BottomSquareButton(modifier: Modifier = Modifier, onClick: () -> Uni
     }
 }
 
+@Composable
+private fun LogoutDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Logout") },
+        text = { Text(text = "Are you sure you want to log out?") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = "Logout", color = Color(0xFFE56B8C))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
+        }
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     HomeScreenContent(
-        uiState = HomeUiState(userName = "Ansuman Senapati"),
-        onCameraClick = {},
-        onNotificationsClick = {},
-        onLogoutClick = {},
-        onFabClick = {}
+        uiState = HomeUiState(userName = "Ansuman Senapati", clubName = "Young Women's Club"),
+        onDashboardClick = {}
     )
 }

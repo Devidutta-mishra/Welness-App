@@ -1,0 +1,53 @@
+package com.example.yourswelnes.feature.splash.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.yourswelnes.feature.auth.data.repository.AuthRepository
+import com.example.yourswelnes.feature.splash.presentation.SplashUiState
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+@HiltViewModel
+class SplashViewModel @Inject constructor(
+    private val authRepository: AuthRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(SplashUiState())
+    val uiState: StateFlow<SplashUiState> = _uiState.asStateFlow()
+
+    private val navigationEvents = Channel<SplashNavigationEvent>(Channel.BUFFERED)
+    val navigationEvent = navigationEvents.receiveAsFlow()
+
+    init {
+        checkLoginState()
+    }
+
+    private fun checkLoginState() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val isLoggedIn = authRepository.isLoggedIn()
+            _uiState.update {
+                it.copy(isLoading = false, isLoggedIn = isLoggedIn)
+            }
+            navigationEvents.send(
+                if (isLoggedIn) {
+                    SplashNavigationEvent.NavigateToHome
+                } else {
+                    SplashNavigationEvent.NavigateToLogin
+                }
+            )
+        }
+    }
+}
+
+sealed interface SplashNavigationEvent {
+    data object NavigateToHome : SplashNavigationEvent
+    data object NavigateToLogin : SplashNavigationEvent
+}
