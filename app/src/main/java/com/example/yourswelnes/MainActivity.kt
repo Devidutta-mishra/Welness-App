@@ -4,7 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.example.yourswelnes.ui.home.HomeScreen
+import androidx.navigation.compose.rememberNavController
+import com.example.yourswelnes.navigation.AppNavGraph
 import com.example.yourswelnes.ui.theme.YourswelnesTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -15,7 +16,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             YourswelnesTheme {
-                HomeScreen()
+                val navController = rememberNavController()
+                AppNavGraph(navController = navController)
             }
         }
     }
