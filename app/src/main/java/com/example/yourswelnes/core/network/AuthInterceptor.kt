@@ -24,20 +24,14 @@ class AuthInterceptor @Inject constructor(
         val token = runBlocking { authPreferences.getToken() }
         val request = chain.request()
         
-        // Skip adding the Authorization header for:
-        // 1. Requests that already have it
-        // 2. The login-url endpoint on ywcenter.com (which uses token in body instead)
-        val host = request.url.host
-        val path = request.url.encodedPath
-        val skipHeader = token.isNullOrEmpty() || 
-                         request.header("Authorization") != null ||
-                         (host == "ywcenter.com" && path.contains("login-url"))
-
-        val authorized = if (skipHeader) {
-            request
+        val authorized = if (token.isNullOrEmpty()) {
+            request.newBuilder()
+                .header("Accept", "application/json")
+                .build()
         } else {
             request.newBuilder()
                 .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
                 .build()
         }
         return chain.proceed(authorized)

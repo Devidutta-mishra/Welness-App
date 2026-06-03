@@ -1,5 +1,6 @@
 package com.example.yourswelnes.feature.auth.presentation
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Visibility
@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.yourswelnes.R
 import com.example.yourswelnes.ui.theme.YourswelnesTheme
 
 @Composable
@@ -101,31 +104,31 @@ private fun LoginHeader(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            modifier = Modifier.size(86.dp),
+            modifier = Modifier.size(100.dp),
             shape = CircleShape,
-            color = Color(0xFF2F80ED),
+            color = Color.White,
             shadowElevation = 10.dp
         ) {
-            Icon(
-                imageVector = Icons.Filled.FitnessCenter,
+            Image(
+                painter = painterResource(id = R.drawable.app_logo),
                 contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.padding(22.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
         }
 
         Spacer(modifier = Modifier.height(22.dp))
 
         Text(
-            text = "yourswelnes",
+            text = "Yours Wellness Center",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF172033)
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "Sign in to continue tracking your fitness workday",
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF667085),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp)
         )
     }

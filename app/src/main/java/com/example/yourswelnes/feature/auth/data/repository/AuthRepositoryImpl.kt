@@ -1,7 +1,7 @@
 package com.example.yourswelnes.feature.auth.data.repository
 
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
-import com.example.yourswelnes.domain.model.AuthUser
+import com.example.yourswelnes.feature.auth.domain.model.AuthUser
 import com.example.yourswelnes.feature.auth.data.remote.api.AuthApi
 import com.example.yourswelnes.feature.auth.data.remote.dto.LoginRequestDto
 import com.example.yourswelnes.feature.auth.data.remote.mapper.toDomain

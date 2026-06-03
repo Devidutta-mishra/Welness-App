@@ -1,5 +1,6 @@
 package com.example.yourswelnes.feature.home.data.repository
 
+import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.feature.home.data.remote.api.ClubApi
 import com.example.yourswelnes.feature.home.data.remote.mapper.toDomain
 import com.example.yourswelnes.feature.home.domain.model.ClubDetails
@@ -9,22 +10,20 @@ import timber.log.Timber
 
 @Singleton
 class ClubRepositoryImpl @Inject constructor(
-    private val clubApi: ClubApi
+    private val clubApi: ClubApi,
+    private val locationPrefs: LocationPreferencesDataStore
 ) : ClubRepository {
 
     override suspend fun getClubDetails(): Result<ClubDetails> = runCatching {
         val response = clubApi.getClubDetails()
-        
-        // We consider it a success if we can map it to a valid domain model
-        // with a non-fallback club name.
+        Timber.d("Club API Response: %s", response)
         val domain = response.toDomain()
-        
-        if (domain.clubName != "Club information unavailable") {
+        if (response.success == true && domain.clubName.isNotBlank()) {
+            locationPrefs.saveClubInfo(domain.id, domain.latitude, domain.longitude)
             domain
         } else {
-            // If the mapper returned fallback, check if there's an error message in the response
-            val errorMsg = response.message ?: "Club details not found in response"
-            Timber.e("Club API error or missing data: %s", errorMsg)
+            val errorMsg = response.message ?: "Club information not found"
+            Timber.e("Club API error: %s", errorMsg)
             throw Exception(errorMsg)
         }
     }.onFailure {

@@ -1,11 +1,21 @@
 package com.example.yourswelnes.di
 
+import android.content.Context
+import androidx.core.app.NotificationManagerCompat
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
 object NotificationModule {
-    // TODO: Add notification dependency bindings.
+
+    @Provides
+    @Singleton
+    fun provideNotificationManagerCompat(
+        @ApplicationContext context: Context
+    ): NotificationManagerCompat = NotificationManagerCompat.from(context)
 }

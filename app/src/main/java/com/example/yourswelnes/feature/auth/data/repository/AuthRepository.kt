@@ -1,6 +1,6 @@
 package com.example.yourswelnes.feature.auth.data.repository
 
-import com.example.yourswelnes.domain.model.AuthUser
+import com.example.yourswelnes.feature.auth.domain.model.AuthUser
 import kotlinx.coroutines.flow.Flow
 
 interface AuthRepository {
