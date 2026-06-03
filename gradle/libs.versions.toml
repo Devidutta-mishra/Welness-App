@@ -23,6 +23,7 @@ playServicesLocation = "21.3.0"
 datastore = "1.1.1"
 browser = "1.8.0"
 biometric = "1.1.0"
+appcompat = "1.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -92,6 +93,7 @@ androidx-browser = { group = "androidx.browser", name = "browser", version.ref =
 
 # Biometric
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

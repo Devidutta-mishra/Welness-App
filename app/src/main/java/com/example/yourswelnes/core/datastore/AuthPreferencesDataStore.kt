@@ -5,7 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.yourswelnes.domain.model.AuthUser
+import com.example.yourswelnes.feature.auth.domain.model.AuthUser
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,12 +25,14 @@ class AuthPreferencesDataStore @Inject constructor(
 
     val cachedUser: Flow<AuthUser?> = dataStore.data.map { prefs ->
         val id = prefs[KEY_USER_ID]
+        val displayId = prefs[KEY_DISPLAY_ID]
         val name = prefs[KEY_USER_NAME]
         if (id.isNullOrEmpty() || name == null) {
             null
         } else {
             AuthUser(
                 id = id,
+                userId = displayId,
                 name = name,
                 email = prefs[KEY_USER_EMAIL],
                 phone = prefs[KEY_USER_PHONE],
@@ -53,6 +55,7 @@ class AuthPreferencesDataStore @Inject constructor(
             prefs[KEY_TOKEN] = token
             prefs[KEY_LOGGED_IN] = true
             prefs[KEY_USER_ID] = user.id
+            user.userId.put(prefs, KEY_DISPLAY_ID)
             prefs[KEY_USER_NAME] = user.name
             user.email.put(prefs, KEY_USER_EMAIL)
             user.phone.put(prefs, KEY_USER_PHONE)
@@ -88,6 +91,7 @@ class AuthPreferencesDataStore @Inject constructor(
         val KEY_TOKEN = stringPreferencesKey("auth_token")
         val KEY_LOGGED_IN = booleanPreferencesKey("is_logged_in")
         val KEY_USER_ID = stringPreferencesKey("user_id")
+        val KEY_DISPLAY_ID = stringPreferencesKey("display_id")
         val KEY_USER_NAME = stringPreferencesKey("user_name")
         val KEY_USER_EMAIL = stringPreferencesKey("user_email")
         val KEY_USER_PHONE = stringPreferencesKey("user_phone")
@@ -100,7 +104,7 @@ class AuthPreferencesDataStore @Inject constructor(
         val KEY_REDIRECT = stringPreferencesKey("redirect")
 
         val SESSION_KEYS = listOf(
-            KEY_TOKEN, KEY_LOGGED_IN, KEY_USER_ID, KEY_USER_NAME, KEY_USER_EMAIL,
+            KEY_TOKEN, KEY_LOGGED_IN, KEY_USER_ID, KEY_DISPLAY_ID, KEY_USER_NAME, KEY_USER_EMAIL,
             KEY_USER_PHONE, KEY_USER_GENDER, KEY_USER_ROLE, KEY_USER_STATUS,
             KEY_USER_LEVEL, KEY_USER_IMAGE, KEY_PROFILE_IMAGE, KEY_REDIRECT
         )
