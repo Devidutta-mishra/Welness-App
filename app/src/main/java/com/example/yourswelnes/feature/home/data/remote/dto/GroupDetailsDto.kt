@@ -8,6 +8,7 @@ data class GroupDetailsRequest(
 
 data class GroupDetailsResponse(
     @SerializedName("success") val success: Boolean? = null,
+    @SerializedName("error") val error: String? = null,
     @SerializedName("user_id") val userId: String? = null,
     @SerializedName("groups") val groups: List<GroupDto>? = null
 )

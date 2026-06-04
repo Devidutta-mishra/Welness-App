@@ -17,8 +17,8 @@ class LocationRepositoryImpl @Inject constructor(
             .onFailure { Timber.e(it, "Failed to save location record") }
     }
 
-    override suspend fun getPendingLocations(): List<LocationRecord> =
-        runCatching { locationDao.getPendingLocations().map { it.toDomain() } }
+    override suspend fun getPendingLocations(userId: String): List<LocationRecord> =
+        runCatching { locationDao.getPendingLocations(userId).map { it.toDomain() } }
             .onFailure { Timber.e(it, "Failed to query pending locations") }
             .getOrDefault(emptyList())
 
@@ -30,6 +30,7 @@ class LocationRepositoryImpl @Inject constructor(
 
     private fun LocationRecord.toEntity() = LocationEntity(
         id = id,
+        userId = userId,
         latitude = latitude,
         longitude = longitude,
         distance = distance,
@@ -40,6 +41,7 @@ class LocationRepositoryImpl @Inject constructor(
 
     private fun LocationEntity.toDomain() = LocationRecord(
         id = id,
+        userId = userId,
         latitude = latitude,
         longitude = longitude,
         distance = distance,

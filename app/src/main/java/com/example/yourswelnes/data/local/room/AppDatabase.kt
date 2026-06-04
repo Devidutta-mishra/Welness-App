@@ -11,7 +11,7 @@ import com.example.yourswelnes.data.local.room.entity.LocationEntity
 
 @Database(
     entities = [LocationEntity::class, AppMonitoringEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,5 +31,11 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 PRIMARY KEY(`appId`)
             )"""
         )
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE `locations` ADD COLUMN `user_id` TEXT NOT NULL DEFAULT ''")
     }
 }

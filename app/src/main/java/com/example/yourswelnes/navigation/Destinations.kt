@@ -10,9 +10,13 @@ object Destinations {
 
     const val ARG_NEXT_DEST = "nextDest"
     fun requirements(nextDest: String) = "requirements/$nextDest"
-    const val CAMERA = "camera"
+
     const val LOCATION_PERMISSION = "location_permission"
     const val NOTIFICATIONS = "notifications"
+
+    const val ARG_GROUP_ID = "groupId"
+    const val CAMERA = "camera/{$ARG_GROUP_ID}"
+    fun camera(groupId: Long) = "camera/$groupId"
 
     private const val CAMERA_PREVIEW_BASE = "camera_preview"
     const val ARG_PHOTO_URI = "photoUri"

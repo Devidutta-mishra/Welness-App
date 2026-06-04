@@ -33,11 +33,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 private const val TAG = "LocationService"
-private const val CONFIG_REFRESH_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
+private const val CONFIG_REFRESH_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
 
 @AndroidEntryPoint
 class LocationForegroundService : android.app.Service() {
@@ -50,6 +51,7 @@ class LocationForegroundService : android.app.Service() {
     @Inject lateinit var locationNotificationManager: LocationNotificationManager
     @Inject lateinit var locationConfigRepository: LocationConfigRepository
     @Inject lateinit var locationApi: LocationApi
+    @Inject lateinit var uploadLock: LocationUploadLock
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var trackingJob: Job? = null
@@ -164,6 +166,9 @@ class LocationForegroundService : android.app.Service() {
                     val waitMs = locationScheduler.millisUntilWindowStart(startTime)
                     Timber.tag(TAG).d("Collection decision: OUTSIDE_WINDOW — sleeping ${waitMs / 60_000L} min until window opens")
                     delay(waitMs.coerceAtLeast(60_000L))
+                    // Refresh config immediately when the next window is about to open so we
+                    // never enter a new tracking session with stale start/end times.
+                    refreshConfigFromApi()
                 }
             }
             Timber.tag(TAG).d("Collection loop exited (scope cancelled)")
@@ -194,61 +199,68 @@ class LocationForegroundService : android.app.Service() {
     }
 
     private suspend fun uploadPendingLocations() {
-        val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
-        val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
-        val currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-        Timber.tag(TAG).d("Upload check — Tracking Window: [$startTime–$endTime], Current Time: $currentTime")
-        if (!locationScheduler.isInTrackingWindow(startTime, endTime)) {
-            Timber.tag(TAG).d("Collection decision: OUTSIDE_WINDOW — skipping upload")
-            return
-        }
-
-        val pending = locationRepository.getPendingLocations()
-        if (pending.isEmpty()) {
-            Timber.tag(TAG).d("Upload tick — no pending locations")
-            return
-        }
-        Timber.tag(TAG).d("Location Count (batch): ${pending.size}")
-
-        val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
-            Timber.tag(TAG).w("Upload tick — no cached user, skipping")
-            return
-        }
-        val clubId = locationPrefs.getClubId() ?: run {
-            Timber.tag(TAG).w("Upload tick — no club ID cached, skipping")
-            return
-        }
-
-        val payload = LocationUploadRequestDto(
-            locations = pending.map { record ->
-                val uploadTimestamp = LocalDateTime.ofInstant(
-                    Instant.ofEpochMilli(record.createdAt), ZoneId.systemDefault()
-                ).format(timestampFormatter)
-                Timber.tag(TAG).d("Upload Timestamp: $uploadTimestamp")
-                LocationItemDto(
-                    userId = userId,
-                    latitude = record.latitude,
-                    longitude = record.longitude,
-                    clubId = clubId,
-                    distance = record.distance.toInt(),
-                    time = uploadTimestamp
-                )
+        uploadLock.mutex.withLock {
+            val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
+                Timber.tag(TAG).w("Upload tick — no cached user, skipping")
+                return@withLock
             }
-        )
 
-        runCatching { locationApi.storeLocations(payload) }
-            .onSuccess { response ->
-                if (response.success == true) {
-                    locationRepository.markAsUploaded(pending.map { it.id })
-                    locationPrefs.saveLastSyncTime(System.currentTimeMillis())
-                    Timber.tag(TAG).i("Upload SUCCESS — ${pending.size} record(s) uploaded")
-                } else {
-                    Timber.tag(TAG).w("Upload API returned success=false: ${response.message} — will retry next tick")
+            val pending = locationRepository.getPendingLocations(userId)
+            if (pending.isEmpty()) {
+                Timber.tag(TAG).d("Upload tick — no pending locations for user $userId")
+                return@withLock
+            }
+
+            val clubId = locationPrefs.getClubId() ?: run {
+                Timber.tag(TAG).w("Upload tick — no club ID cached, skipping")
+                return@withLock
+            }
+
+            val ids = pending.map { it.id }
+            val oldestTs = LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(pending.first().timestamp), ZoneId.systemDefault()
+            ).format(timestampFormatter)
+            val newestTs = LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(pending.last().timestamp), ZoneId.systemDefault()
+            ).format(timestampFormatter)
+            Timber.tag(TAG).i(
+                "UPLOAD START | userId=$userId | count=${pending.size} | " +
+                "locationIds=$ids | range=$oldestTs -> $newestTs"
+            )
+
+            val payload = LocationUploadRequestDto(
+                locations = pending.map { record ->
+                    val collectionTimestamp = LocalDateTime.ofInstant(
+                        Instant.ofEpochMilli(record.timestamp), ZoneId.systemDefault()
+                    ).format(timestampFormatter)
+                    LocationItemDto(
+                        userId = userId,
+                        latitude = record.latitude,
+                        longitude = record.longitude,
+                        clubId = clubId,
+                        distance = record.distance.toInt(),
+                        time = collectionTimestamp
+                    )
                 }
-            }
-            .onFailure { e ->
-                Timber.tag(TAG).e(e, "Upload FAILED — will retry next tick")
-            }
+            )
+
+            runCatching { locationApi.storeLocations(payload) }
+                .onSuccess { response ->
+                    if (response.success == true) {
+                        locationRepository.markAsUploaded(ids)
+                        locationPrefs.saveLastSyncTime(System.currentTimeMillis())
+                        Timber.tag(TAG).i(
+                            "UPLOAD SUCCESS | userId=$userId | uploadedCount=${ids.size} | " +
+                            "markedUploaded=$ids"
+                        )
+                    } else {
+                        Timber.tag(TAG).w("Upload API returned success=false: ${response.message} — will retry next tick")
+                    }
+                }
+                .onFailure { e ->
+                    Timber.tag(TAG).e(e, "Upload FAILED — will retry next tick")
+                }
+        }
     }
 
     private suspend fun refreshConfigFromApi() {
@@ -265,6 +277,11 @@ class LocationForegroundService : android.app.Service() {
     }
 
     private suspend fun collectAndSaveLocation() {
+        val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
+            Timber.tag(TAG).w("No cached user — skipping location collection")
+            return
+        }
+
         Timber.tag(TAG).d("Requesting GPS location from FusedLocationClient…")
         val location = withTimeoutOrNull(10_000L) { locationTracker.getCurrentLocation() }
 
@@ -297,6 +314,7 @@ class LocationForegroundService : android.app.Service() {
 
         locationRepository.saveLocation(
             LocationRecord(
+                userId = userId,
                 latitude = location.latitude,
                 longitude = location.longitude,
                 distance = distance,
@@ -304,7 +322,7 @@ class LocationForegroundService : android.app.Service() {
                 createdAt = collectionTimeMs
             )
         )
-        Timber.tag(TAG).i("Location SAVED — Collection Timestamp: $collectionTimestamp")
+        Timber.tag(TAG).i("Location SAVED — userId=$userId, Collection Timestamp: $collectionTimestamp")
     }
 
     private fun isGpsEnabled(): Boolean {

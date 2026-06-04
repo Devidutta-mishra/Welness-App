@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.yourswelnes.data.local.room.AppDatabase
 import com.example.yourswelnes.data.local.room.MIGRATION_1_2
+import com.example.yourswelnes.data.local.room.MIGRATION_2_3
 import com.example.yourswelnes.data.local.room.dao.AppMonitoringDao
 import com.example.yourswelnes.data.local.room.dao.LocationDao
 import dagger.Module
@@ -24,7 +25,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "yourswelnes.db"
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
     @Provides
     @Singleton
