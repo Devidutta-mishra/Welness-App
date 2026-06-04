@@ -66,7 +66,7 @@ fun BiometricLockScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .systemBarsPadding()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -74,13 +74,14 @@ fun BiometricLockScreen(
     ) {
         Surface(
             shape = CircleShape,
-            color = Color(0xFFEEF4FF),
+            color = Color.White,
+            shadowElevation = 4.dp,
             modifier = Modifier.size(100.dp)
         ) {
             Icon(
                 imageVector = Icons.Filled.Fingerprint,
                 contentDescription = null,
-                tint = Color(0xFF2F80ED),
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(24.dp)
             )
         }
@@ -127,7 +128,7 @@ fun BiometricLockScreen(
                 }
             },
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF2F80ED),
+                containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.White
             ),
             shape = RoundedCornerShape(12.dp),

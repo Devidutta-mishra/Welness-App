@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -38,15 +39,7 @@ fun SplashScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFFFF4F7),
-                        Color(0xFFF8FBFF),
-                        Color.White
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
             .systemBarsPadding()
             .padding(32.dp),
         contentAlignment = Alignment.Center
@@ -57,7 +50,7 @@ fun SplashScreen(
         ) {
             Surface(
                 modifier = Modifier.size(112.dp),
-                shape = CircleShape,
+                shape = RectangleShape,
                 color = Color.White,
                 shadowElevation = 12.dp
             ) {
@@ -88,7 +81,7 @@ fun SplashScreen(
 
             if (uiState.isLoading) {
                 CircularProgressIndicator(
-                    color = Color(0xFF2F80ED),
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp),
                     strokeWidth = 3.dp
                 )

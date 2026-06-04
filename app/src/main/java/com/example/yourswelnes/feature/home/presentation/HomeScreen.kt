@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -102,11 +103,7 @@ fun HomeScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFFFF6F8), Color.White)
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
             .navigationBarsPadding()
     ) {
         Column(
@@ -169,12 +166,10 @@ private fun DashboardCard(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(4.dp, shape = RoundedCornerShape(16.dp))
+                .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp))
                 .clickable(enabled = !isLoading, onClick = onClick),
             shape = RoundedCornerShape(16.dp),
             color = Color.White,
-            border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.5f)),
-            shadowElevation = 0.dp,
             tonalElevation = 0.dp
         ) {
             Row(
@@ -239,7 +234,7 @@ private fun HomeTopBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = CircleShape,
+                shape = RectangleShape,
                 color = Color.White,
                 shadowElevation = 2.dp
             ) {
@@ -299,9 +294,8 @@ private fun ProfileHeader(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             shape = CircleShape,
-            color = Color(0xFFE3F2FD),
-            tonalElevation = 16.dp,
-            shadowElevation = 15.dp,
+            color = Color.White,
+            shadowElevation = 8.dp,
             modifier = Modifier.size(140.dp)
         ) {
             if (!profileImageUrl.isNullOrBlank()) {
@@ -317,7 +311,7 @@ private fun ProfileHeader(
                 Icon(
                     imageVector = Icons.Filled.Person,
                     contentDescription = "Profile",
-                    tint = Color(0xFF2F80ED),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(34.dp)
                 )
             }
@@ -355,8 +349,8 @@ private fun BottomSquareButton(modifier: Modifier = Modifier, onClick: () -> Uni
     Box(
         modifier = modifier
             .size(68.dp)
-            .shadow(8.dp, shape = RoundedCornerShape(14.dp))
-            .background(color = Color(0xFF2F80ED), shape = RoundedCornerShape(14.dp))
+            .shadow(12.dp, shape = RoundedCornerShape(16.dp))
+            .background(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -373,15 +367,19 @@ private fun BottomSquareButton(modifier: Modifier = Modifier, onClick: () -> Uni
 private fun LogoutDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Logout") },
-        text = { Text(text = "Are you sure you want to log out?") },
+        title = { Text(text = "Logout", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) },
+        text = { Text(text = "Are you sure you want to log out?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(text = "Logout", color = Color.Red, fontWeight = FontWeight.Bold)
+                Text(text = "Logout", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(text = "Cancel") }
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     )
 }

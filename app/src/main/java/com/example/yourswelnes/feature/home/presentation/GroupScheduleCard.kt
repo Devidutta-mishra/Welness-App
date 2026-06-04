@@ -74,18 +74,17 @@ private fun CurrentActivityCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(3.dp, shape = RoundedCornerShape(16.dp)),
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
-        border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.5f)),
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "Current Activity",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -122,7 +121,7 @@ private fun NoActivityCard(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(2.dp, shape = RoundedCornerShape(16.dp)),
+            .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
         tonalElevation = 0.dp

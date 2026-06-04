@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,7 +41,7 @@ fun WelcomeLandingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -61,7 +62,7 @@ fun WelcomeLandingScreen(
                     contentDescription = "Yours Wellness Center",
                     modifier = Modifier
                         .size(100.dp)
-                        .clip(RoundedCornerShape(16.dp)),
+                        .clip(RectangleShape),
                     contentScale = ContentScale.Fit
                 )
 
@@ -71,7 +72,7 @@ fun WelcomeLandingScreen(
                     text = "Welcome Back !!!",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF111111),
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center
                 )
 
@@ -81,7 +82,7 @@ fun WelcomeLandingScreen(
                     text = "Yours Wellness Center",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF6D00),
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
                 )
             }
@@ -107,7 +108,7 @@ fun WelcomeLandingScreen(
                     text = "Odisha's Biggest Health Community",
                     style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp),
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF111111),
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(bottom = 28.dp)
                 )
@@ -129,7 +130,10 @@ fun WelcomeLandingScreen(
                             .fillMaxSize()
                             .background(
                                 Brush.horizontalGradient(
-                                    colors = listOf(Color(0xFFFF6D00), Color(0xFFFFB300))
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    )
                                 ),
                                 shape = RoundedCornerShape(14.dp)
                             ),
