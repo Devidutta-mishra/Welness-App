@@ -14,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -225,7 +224,7 @@ fun AppNavGraph(navController: NavHostController) {
 
             HomeScreen(
                 viewModel = viewModel,
-                onFabClick = { navController.navigate(Destinations.CAMERA) },
+                onCameraWithGroup = { groupId -> navController.navigate(Destinations.camera(groupId)) },
                 onNotificationsClick = { navController.navigate(Destinations.NOTIFICATIONS) },
                 onLogoutClick = viewModel::onLogoutClicked,
                 onDashboardClick = viewModel::openDashboard
@@ -242,7 +241,10 @@ fun AppNavGraph(navController: NavHostController) {
             )
         }
 
-        composable(Destinations.CAMERA) {
+        composable(
+            route = Destinations.CAMERA,
+            arguments = listOf(navArgument(Destinations.ARG_GROUP_ID) { type = NavType.LongType })
+        ) {
             CameraScreen(
                 onBack = { navController.popBackStack() },
                 onPhotoCaptured = { encodedUri ->

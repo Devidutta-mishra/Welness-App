@@ -40,7 +40,7 @@ class LocationPreferencesDataStore @Inject constructor(
     suspend fun getTrackingStartTime(): String? = dataStore.data.firstOrNull()?.get(KEY_START_TIME)
     suspend fun getTrackingEndTime(): String? = dataStore.data.firstOrNull()?.get(KEY_END_TIME)
     suspend fun getTrackingIntervalSeconds(): Int = dataStore.data.firstOrNull()?.get(KEY_INTERVAL_SECONDS) ?: 30
-    suspend fun getUploadIntervalMinutes(): Int = dataStore.data.firstOrNull()?.get(KEY_UPLOAD_INTERVAL_MINUTES) ?: 10
+    suspend fun getUploadIntervalMinutes(): Int = UPLOAD_INTERVAL_MINUTES
 
     // --- Club info ---
 
@@ -67,6 +67,8 @@ class LocationPreferencesDataStore @Inject constructor(
     val lastSyncTime = dataStore.data.map { it[KEY_LAST_SYNC_TIME] }
 
     private companion object {
+        const val UPLOAD_INTERVAL_MINUTES = 2
+
         val KEY_START_TIME = stringPreferencesKey("tracking_start_time")
         val KEY_END_TIME = stringPreferencesKey("tracking_end_time")
         val KEY_INTERVAL_SECONDS = intPreferencesKey("tracking_interval_seconds")

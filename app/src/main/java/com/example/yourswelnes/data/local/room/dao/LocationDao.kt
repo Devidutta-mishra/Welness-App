@@ -12,8 +12,8 @@ interface LocationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: LocationEntity)
 
-    @Query("SELECT * FROM locations WHERE uploaded = 0 ORDER BY created_at ASC")
-    suspend fun getPendingLocations(): List<LocationEntity>
+    @Query("SELECT * FROM locations WHERE uploaded = 0 AND user_id = :userId ORDER BY created_at ASC")
+    suspend fun getPendingLocations(userId: String): List<LocationEntity>
 
     @Query("UPDATE locations SET uploaded = 1 WHERE id IN (:ids)")
     suspend fun markAsUploaded(ids: List<Long>)

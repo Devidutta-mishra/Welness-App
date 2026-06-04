@@ -40,6 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -55,19 +58,23 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.yourswelnes.R
+import com.example.yourswelnes.feature.camera.presentation.GroupSelectionDialog
+import com.example.yourswelnes.feature.camera.presentation.GroupSelectionViewModel
 import com.example.yourswelnes.feature.location.presentation.LocationStatusViewModel
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     locationViewModel: LocationStatusViewModel = hiltViewModel(),
-    groupScheduleViewModel: GroupScheduleViewModel = hiltViewModel(),
+    groupSelectionViewModel: GroupSelectionViewModel = hiltViewModel(),
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
     onDashboardClick: () -> Unit = {},
-    onFabClick: () -> Unit = {}
+    onCameraWithGroup: (Long) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    val groupUiState by groupSelectionViewModel.uiState.collectAsState()
+    var showGroupDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         locationViewModel.refreshPermissions()
@@ -75,20 +82,41 @@ fun HomeScreen(
 
     HomeScreenContent(
         uiState = state,
-        groupScheduleViewModel = groupScheduleViewModel,
         onNotificationsClick = onNotificationsClick,
         onLogoutClick = onLogoutClick,
         onLogoutConfirmed = viewModel::onLogoutConfirmed,
         onLogoutDismissed = viewModel::onLogoutDismissed,
         onDashboardClick = onDashboardClick,
-        onFabClick = onFabClick
+        onFabClick = { showGroupDialog = true }
     )
+
+    if (showGroupDialog) {
+        GroupSelectionDialog(
+            groups = groupUiState.groups,
+            selectedGroup = groupUiState.selectedGroup,
+            validationError = groupUiState.validationError,
+            isLoading = groupUiState.isLoading,
+            error = groupUiState.error,
+            onGroupSelect = groupSelectionViewModel::selectGroup,
+            onConfirm = {
+                groupSelectionViewModel.validateAndProceed { group ->
+                    showGroupDialog = false
+                    groupSelectionViewModel.clearSelection()
+                    onCameraWithGroup(group.groupId)
+                }
+            },
+            onDismiss = {
+                showGroupDialog = false
+                groupSelectionViewModel.clearSelection()
+            },
+            onRetry = { groupSelectionViewModel.loadGroups(forceRefresh = true) }
+        )
+    }
 }
 
 @Composable
 fun HomeScreenContent(
     uiState: HomeUiState,
-    groupScheduleViewModel: GroupScheduleViewModel? = null,
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
     onLogoutConfirmed: () -> Unit = {},
@@ -136,12 +164,6 @@ fun HomeScreenContent(
                 errorMessage = uiState.dashboardError,
                 onClick = onDashboardClick
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (groupScheduleViewModel != null) {
-                GroupScheduleSection(viewModel = groupScheduleViewModel)
-            }
 
             Spacer(modifier = Modifier.weight(1f))
         }

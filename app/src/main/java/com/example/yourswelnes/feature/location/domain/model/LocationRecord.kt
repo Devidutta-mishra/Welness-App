@@ -2,6 +2,7 @@ package com.example.yourswelnes.feature.location.domain.model
 
 data class LocationRecord(
     val id: Long = 0,
+    val userId: String,
     val latitude: Double,
     val longitude: Double,
     val distance: Float,

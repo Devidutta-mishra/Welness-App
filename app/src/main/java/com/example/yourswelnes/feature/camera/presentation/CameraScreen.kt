@@ -14,14 +14,19 @@ import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cameraswitch
@@ -31,6 +36,7 @@ import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -67,6 +73,17 @@ fun CameraScreen(
     val uiState by viewModel.uiState.collectAsState()
     val lensFacing by viewModel.lensFacing.collectAsState()
     val flashMode by viewModel.flashMode.collectAsState()
+    val activityState by viewModel.activityState.collectAsState()
+
+    val statusText = when {
+        activityState.isLoading -> "Checking your schedule…"
+        activityState.activityName.isNullOrBlank() ->
+            "No active activity right now — you can't take a photo"
+        else -> buildString {
+            activityState.groupName?.let { append(it); append("  •  ") }
+            append(activityState.activityName)
+        }
+    }
 
     // Ensure status bar icons are light for the dark camera background
     if (!view.isInEditMode) {
@@ -121,6 +138,8 @@ fun CameraScreen(
                 lensFacing = lensFacing,
                 flashMode = flashMode,
                 isCapturing = uiState is CameraUiState.Capturing,
+                canCapture = activityState.canCapture,
+                statusText = statusText,
                 onCaptureRequest = { imageCapture -> viewModel.capturePhoto(imageCapture) },
                 onToggleFlash = viewModel::toggleFlashMode,
                 onToggleLens = viewModel::toggleLens,
@@ -141,6 +160,8 @@ private fun LiveCameraPreview(
     lensFacing: Int,
     flashMode: Int,
     isCapturing: Boolean,
+    canCapture: Boolean,
+    statusText: String,
     onCaptureRequest: (ImageCapture) -> Unit,
     onToggleFlash: () -> Unit,
     onToggleLens: () -> Unit,
@@ -226,23 +247,51 @@ private fun LiveCameraPreview(
             }
         }
 
-        // Shutter button
-        Box(
-            contentAlignment = Alignment.Center,
+        // Status message + shutter button
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = 40.dp)
         ) {
+            StatusPill(text = statusText, isBlocking = !canCapture)
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             if (isCapturing) {
                 CircularProgressIndicator(
                     color = Color.White,
                     modifier = Modifier.size(72.dp)
                 )
             } else {
-                ShutterButton(onClick = { onCaptureRequest(imageCapture) })
+                ShutterButton(
+                    enabled = canCapture,
+                    onClick = { onCaptureRequest(imageCapture) }
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, isBlocking: Boolean) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 24.dp)
+            .widthIn(max = 320.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (isBlocking) Color(0xCCC62828) else Color.Black.copy(alpha = 0.55f)
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -263,20 +312,22 @@ private fun flashContentDescription(flashMode: Int): String {
 }
 
 @Composable
-private fun ShutterButton(onClick: () -> Unit) {
+private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+    val outerColor = if (enabled) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f)
+    val innerColor = if (enabled) Color.White else Color.White.copy(alpha = 0.35f)
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(80.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.35f))
-            .clickable(onClick = onClick)
+            .background(outerColor)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
     ) {
         Box(
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(innerColor)
         )
     }
 }
