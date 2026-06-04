@@ -2,16 +2,29 @@ package com.example.yourswelnes.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Brand
-val AppBlue       = Color(0xFF2F80ED)
-val AppBlueDark   = Color(0xFF1A6BCE)
-val AppBlueLight  = Color(0xFFE3F2FD)
+// Modern Minimalist Palette
+val PrimaryOrange  = Color(0xFFFF7300)
+val PrimaryOrangeDark = Color(0xFFE66700)
+val PrimaryOrangeLight = Color(0xFFFF8E33)
 
-// Text hierarchy — all high-contrast for accessibility
-val TextPrimary   = Color(0xFF111111)  // near-black for headings and primary text
-val TextSecondary = Color(0xFF333333)  // dark grey for secondary/body text
-val TextTertiary  = Color(0xFF555555)  // medium-dark for metadata and timestamps
+// Background & Surface
+val AppBackground  = Color(0xFFF4F6F8)
+val SurfaceWhite   = Color(0xFFFFFFFF)
 
-// Surfaces
-val SurfaceWhite  = Color(0xFFFFFFFF)
-val SurfaceLight  = Color(0xFFFAFAFA)
+// Typography
+val TextPrimary    = Color(0xFF2D3748) // Dark Slate
+val TextSecondary  = Color(0xFF718096) // Medium Gray
+val TextTertiary   = Color(0xFFA0AEC0) // Lighter Gray
+
+// Borders & Dividers
+val BorderLight    = Color(0xFFE2E8F0)
+val BorderMedium   = Color(0xFFCBD5E0)
+
+// Status
+val ErrorRed       = Color(0xFFD32F2F)
+val SuccessGreen   = Color(0xFF10B981)
+
+// Legacy compatibility (remapping to new theme if necessary)
+val AppBlue        = PrimaryOrange
+val AppBlueDark    = PrimaryOrangeDark
+val AppBlueLight   = PrimaryOrangeLight

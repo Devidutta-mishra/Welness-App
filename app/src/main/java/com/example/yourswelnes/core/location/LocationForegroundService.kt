@@ -12,10 +12,16 @@ import androidx.core.app.ServiceCompat
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.core.notification.LocationNotificationManager
+import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
+import com.example.yourswelnes.feature.location.data.remote.dto.LocationItemDto
+import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRequestDto
 import com.example.yourswelnes.feature.location.data.repository.LocationConfigRepository
 import com.example.yourswelnes.feature.location.data.repository.LocationRepository
 import com.example.yourswelnes.feature.location.domain.model.LocationRecord
 import dagger.hilt.android.AndroidEntryPoint
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +29,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -41,10 +48,14 @@ class LocationForegroundService : android.app.Service() {
     @Inject lateinit var authPrefs: AuthPreferencesDataStore
     @Inject lateinit var locationNotificationManager: LocationNotificationManager
     @Inject lateinit var locationConfigRepository: LocationConfigRepository
+    @Inject lateinit var locationApi: LocationApi
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var trackingJob: Job? = null
     private var configRefreshJob: Job? = null
+    private var uploadJob: Job? = null
+
+    private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     private val gpsStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -110,6 +121,7 @@ class LocationForegroundService : android.app.Service() {
         }
 
         startConfigRefreshLoop()
+        startUploadLoop()
 
         trackingJob = serviceScope.launch {
             val token = authPrefs.getToken()
@@ -160,6 +172,63 @@ class LocationForegroundService : android.app.Service() {
                 refreshConfigFromApi()
             }
         }
+    }
+
+    private fun startUploadLoop() {
+        if (uploadJob?.isActive == true) return
+        uploadJob = serviceScope.launch {
+            while (isActive) {
+                val uploadIntervalMs = locationPrefs.getUploadIntervalMinutes() * 60 * 1000L
+                Timber.tag(TAG).d("Next upload in ${locationPrefs.getUploadIntervalMinutes()} min")
+                delay(uploadIntervalMs)
+                uploadPendingLocations()
+            }
+        }
+    }
+
+    private suspend fun uploadPendingLocations() {
+        val pending = locationRepository.getPendingLocations()
+        if (pending.isEmpty()) {
+            Timber.tag(TAG).d("Upload tick — no pending locations")
+            return
+        }
+        Timber.tag(TAG).d("Upload tick — ${pending.size} record(s) pending")
+
+        val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
+            Timber.tag(TAG).w("Upload tick — no cached user, skipping")
+            return
+        }
+        val clubId = locationPrefs.getClubId() ?: run {
+            Timber.tag(TAG).w("Upload tick — no club ID cached, skipping")
+            return
+        }
+
+        val payload = LocationUploadRequestDto(
+            locations = pending.map { record ->
+                LocationItemDto(
+                    userId = userId,
+                    latitude = record.latitude,
+                    longitude = record.longitude,
+                    clubId = clubId,
+                    distance = record.distance.toInt(),
+                    time = timestampFormat.format(Date(record.createdAt))
+                )
+            }
+        )
+
+        runCatching { locationApi.storeLocations(payload) }
+            .onSuccess { response ->
+                if (response.success == true) {
+                    locationRepository.markAsUploaded(pending.map { it.id })
+                    locationPrefs.saveLastSyncTime(System.currentTimeMillis())
+                    Timber.tag(TAG).i("Upload SUCCESS — ${pending.size} record(s) uploaded")
+                } else {
+                    Timber.tag(TAG).w("Upload API returned success=false: ${response.message} — will retry next tick")
+                }
+            }
+            .onFailure { e ->
+                Timber.tag(TAG).e(e, "Upload FAILED — will retry next tick")
+            }
     }
 
     private suspend fun refreshConfigFromApi() {
@@ -222,11 +291,10 @@ class LocationForegroundService : android.app.Service() {
     }
 
     private fun stopTracking() {
-        Timber.tag(TAG).d("Cancelling tracking and config-refresh jobs")
-        trackingJob?.cancel()
-        trackingJob = null
-        configRefreshJob?.cancel()
-        configRefreshJob = null
+        Timber.tag(TAG).d("Cancelling tracking, config-refresh and upload jobs")
+        trackingJob?.cancel(); trackingJob = null
+        configRefreshJob?.cancel(); configRefreshJob = null
+        uploadJob?.cancel(); uploadJob = null
         locationNotificationManager.cancelGpsDisabledNotification()
     }
 

@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.yourswelnes.ui.theme.ErrorRed
+import com.example.yourswelnes.ui.theme.SuccessGreen
 
 @Composable
 fun RequirementsScreen(
@@ -74,10 +77,10 @@ fun RequirementsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // While the first check hasn't run yet, show a blank white screen to avoid
+    // While the first check hasn't run yet, show a blank background to avoid
     // flashing the blocking UI on devices where all requirements are already met.
     if (!uiState.hasChecked) {
-        Box(modifier = androidx.compose.ui.Modifier.fillMaxSize().background(Color.White))
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
 
@@ -87,7 +90,7 @@ fun RequirementsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 28.dp),
@@ -166,13 +169,13 @@ private fun RequirementRow(
     notMetIcon: ImageVector
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = if (isMet) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+        modifier = Modifier.fillMaxWidth().shadow(elevation = 2.dp, shape = RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
         tonalElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -183,22 +186,24 @@ private fun RequirementRow(
                 Icon(
                     imageVector = if (isMet) metIcon else notMetIcon,
                     contentDescription = null,
-                    tint = if (isMet) Color(0xFF2E7D32) else Color(0xFFC62828),
+                    tint = if (isMet) SuccessGreen else ErrorRed,
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = if (isMet) Color(0xFF2E7D32) else Color(0xFFC62828)
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Icon(
-                imageVector = if (isMet) Icons.Filled.CheckCircle else notMetIcon,
-                contentDescription = null,
-                tint = if (isMet) Color(0xFF2E7D32) else Color(0xFFC62828),
-                modifier = Modifier.size(20.dp)
-            )
+            if (isMet) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = SuccessGreen,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -209,17 +214,17 @@ private fun SettingsButton(label: String, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp),
-        shape = RoundedCornerShape(14.dp),
+            .height(56.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF2F80ED),
+            containerColor = MaterialTheme.colorScheme.primary,
             contentColor = Color.White
         )
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
         )
     }
 }

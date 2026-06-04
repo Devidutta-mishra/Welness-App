@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +50,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.yourswelnes.feature.notifications.domain.model.NotificationItem
+import com.example.yourswelnes.ui.theme.ErrorRed
+import com.example.yourswelnes.ui.theme.PrimaryOrange
+import com.example.yourswelnes.ui.theme.TextPrimary
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -70,13 +74,13 @@ fun NotificationScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFF8F9FF),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,
-                    titleContentColor = Color.Black,
-                    navigationIconContentColor = Color.Black
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -86,7 +90,7 @@ fun NotificationScreen(
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
-                                    .background(Color(0xFFD32F2F), CircleShape)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape)
                             )
                         }
                     }
@@ -98,14 +102,6 @@ fun NotificationScreen(
                             contentDescription = "Back"
                         )
                     }
-                },
-                actions = {
-//                    IconButton(onClick = { /* TODO: More options */ }) {
-//                        Icon(
-//                            imageVector = Icons.Default.MoreVert,
-//                            contentDescription = "More"
-//                        )
-//                    }
                 }
             )
         }
@@ -174,17 +170,17 @@ private fun NotificationItemCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Color.White,
-        shadowElevation = 2.dp
+        tonalElevation = 0.dp
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
             // Left color bar
             Box(
                 modifier = Modifier
-                    .width(6.dp)
+                    .width(4.dp)
                     .fillMaxHeight()
                     .background(typeColor)
             )
@@ -192,8 +188,8 @@ private fun NotificationItemCard(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Header: Title and Badge
                 Row(
@@ -205,7 +201,7 @@ private fun NotificationItemCard(
                         text = item.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -220,8 +216,8 @@ private fun NotificationItemCard(
                 Text(
                     text = item.message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Black,
-                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -235,15 +231,15 @@ private fun NotificationItemCard(
                     Text(
                         text = formatDate(item.createdAt),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF424242),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
 
                     Text(
                         text = if (item.type.lowercase() == "alert") "Check Schedule" else "View Details",
                         style = MaterialTheme.typography.labelMedium,
-                        color = typeColor,
-                        fontWeight = FontWeight.SemiBold
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -254,7 +250,7 @@ private fun NotificationItemCard(
 @Composable
 private fun TypeBadge(type: String, color: Color) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         color = color.copy(alpha = 0.1f)
     ) {
         Text(
@@ -331,10 +327,10 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
 }
 
 private fun notificationTypeColor(type: String): Color = when (type.lowercase()) {
-    "alert", "error" -> Color(0xFFD32F2F) // Red
+    "alert", "error" -> ErrorRed
     "warning" -> Color(0xFFF59E0B) // Amber
-    "info", "success" -> Color(0xFF2F80ED) // Blue
-    else -> Color.Black
+    "info", "success" -> PrimaryOrange
+    else -> TextPrimary
 }
 
 private fun formatDate(isoDate: String): String {

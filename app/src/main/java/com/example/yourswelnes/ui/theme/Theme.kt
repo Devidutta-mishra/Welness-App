@@ -4,7 +4,7 @@ import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -12,29 +12,29 @@ import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
     // Brand
-    primary          = AppBlue,
+    primary          = PrimaryOrange,
     onPrimary        = Color.White,
-    primaryContainer = AppBlueLight,
-    onPrimaryContainer = AppBlueDark,
+    primaryContainer = PrimaryOrangeLight,
+    onPrimaryContainer = PrimaryOrangeDark,
 
     // Surfaces
-    background       = SurfaceWhite,
+    background       = AppBackground,
     surface          = SurfaceWhite,
-    surfaceVariant   = Color(0xFFF5F5F5),
+    surfaceVariant   = Color.White,
 
-    // Text on surfaces — maximum contrast
+    // Text on surfaces
     onBackground     = TextPrimary,
     onSurface        = TextPrimary,
     onSurfaceVariant = TextSecondary,
-    outline          = TextTertiary,
-    outlineVariant   = Color(0xFFDDDDDD),
+    outline          = BorderLight,
+    outlineVariant   = BorderMedium,
 
     // Content on colours
     onSecondary      = Color.White,
     onTertiary       = Color.White,
 
     // Error
-    error            = Color(0xFFD32F2F),
+    error            = ErrorRed,
     onError          = Color.White,
 )
 
@@ -44,12 +44,15 @@ fun YourswelnesTheme(
 ) {
     val view = LocalView.current
     if (!view.isInEditMode) {
-        SideEffect {
+        DisposableEffect(view) {
             val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = true
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            
+            // Set default light theme appearance (dark icons)
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
+            
+            onDispose {}
         }
     }
 
