@@ -23,7 +23,7 @@ class DashboardRepositoryImpl @Inject constructor(
         val userId = user.id.toIntOrNull()
             ?: throw DashboardException("Invalid user ID. Please log in again.")
 
-        Timber.d("Dashboard SSO request: userId=%d", userId)
+        Timber.d("Dashboard SSO request")
 
         val response = dashboardApi.generateRedirectUrl(GenerateRedirectUrlRequest(userId = userId))
 

@@ -23,6 +23,20 @@ class LocationScheduler @Inject constructor() {
         }
     }
 
+    /** Returns milliseconds until the current window closes. Returns 0 if already outside the window. */
+    fun millisUntilWindowEnd(endTime: String): Long {
+        return try {
+            val now = LocalTime.now()
+            val end = LocalTime.parse(endTime, formatter)
+            val nowSeconds = now.toSecondOfDay().toLong()
+            val endSeconds = end.toSecondOfDay().toLong()
+            if (endSeconds > nowSeconds) (endSeconds - nowSeconds) * 1000L else 0L
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to calculate time until window end [$endTime]")
+            0L
+        }
+    }
+
     /** Returns milliseconds until the next window open. Returns 0 if already inside the window. */
     fun millisUntilWindowStart(startTime: String): Long {
         return try {

@@ -12,20 +12,22 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.location.LocationScheduler
 import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
 import com.example.yourswelnes.feature.location.data.remote.dto.LocationItemDto
 import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRequestDto
 import com.example.yourswelnes.feature.location.data.repository.LocationRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.firstOrNull
 import timber.log.Timber
 
-private val TIMESTAMP_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+private val TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
 @HiltWorker
 class LocationUploadWorker @AssistedInject constructor(
@@ -34,17 +36,27 @@ class LocationUploadWorker @AssistedInject constructor(
     private val locationRepository: LocationRepository,
     private val locationApi: LocationApi,
     private val locationPrefs: LocationPreferencesDataStore,
-    private val authPrefs: AuthPreferencesDataStore
+    private val authPrefs: AuthPreferencesDataStore,
+    private val locationScheduler: LocationScheduler
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
+        val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
+        val currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        Timber.tag(TAG).d("Upload check — Tracking Window: [$startTime–$endTime], Current Time: $currentTime")
+        if (!locationScheduler.isInTrackingWindow(startTime, endTime)) {
+            Timber.tag(TAG).d("Collection decision: OUTSIDE_WINDOW — skipping upload")
+            return Result.success()
+        }
+
         Timber.tag(TAG).d("doWork started — querying pending locations")
         val pending = locationRepository.getPendingLocations()
         if (pending.isEmpty()) {
             Timber.tag(TAG).d("No pending locations to upload — nothing to do")
             return Result.success()
         }
-        Timber.tag(TAG).d("Found ${pending.size} pending location record(s) to upload")
+        Timber.tag(TAG).d("Location Count (batch): ${pending.size}")
 
         val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
             Timber.tag(TAG).w("No cached user — cannot upload, skipping")
@@ -56,17 +68,21 @@ class LocationUploadWorker @AssistedInject constructor(
             return Result.success()
         }
 
-        Timber.tag(TAG).d("Preparing upload batch: userId=$userId, clubId=$clubId, count=${pending.size}")
+        Timber.tag(TAG).d("Preparing upload batch: count=${pending.size}")
 
         val payload = LocationUploadRequestDto(
             locations = pending.map { record ->
+                val uploadTimestamp = LocalDateTime.ofInstant(
+                    Instant.ofEpochMilli(record.createdAt), ZoneId.systemDefault()
+                ).format(TIMESTAMP_FORMATTER)
+                Timber.tag(TAG).d("Upload Timestamp: $uploadTimestamp")
                 LocationItemDto(
                     userId = userId,
                     latitude = record.latitude,
                     longitude = record.longitude,
                     clubId = clubId,
                     distance = record.distance.toInt(),
-                    time = TIMESTAMP_FORMAT.format(Date(record.createdAt))
+                    time = uploadTimestamp
                 )
             }
         )

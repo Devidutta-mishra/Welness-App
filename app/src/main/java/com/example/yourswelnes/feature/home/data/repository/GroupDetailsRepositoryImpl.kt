@@ -22,7 +22,7 @@ class GroupDetailsRepositoryImpl @Inject constructor(
         val userId = user.id.toIntOrNull()
             ?: throw Exception("Invalid user ID. Please log in again.")
 
-        Timber.d("Fetching group details for userId=%d", userId)
+        Timber.d("Fetching group details")
 
         val response = groupDetailsApi.getGroupDetails(GroupDetailsRequest(userId = userId))
         if (response.success != true) throw Exception("Failed to load group schedule.")

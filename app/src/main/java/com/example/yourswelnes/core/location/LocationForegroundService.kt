@@ -19,9 +19,10 @@ import com.example.yourswelnes.feature.location.data.repository.LocationConfigRe
 import com.example.yourswelnes.feature.location.data.repository.LocationRepository
 import com.example.yourswelnes.feature.location.domain.model.LocationRecord
 import dagger.hilt.android.AndroidEntryPoint
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,7 +56,7 @@ class LocationForegroundService : android.app.Service() {
     private var configRefreshJob: Job? = null
     private var uploadJob: Job? = null
 
-    private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    private val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     private val gpsStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -148,14 +149,20 @@ class LocationForegroundService : android.app.Service() {
                 val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
                 val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
                 val intervalMs = locationPrefs.getTrackingIntervalSeconds() * 1000L
+                val currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+                Timber.tag(TAG).d("Window check — Tracking Window: [$startTime–$endTime], Current Time: $currentTime")
 
                 if (locationScheduler.isInTrackingWindow(startTime, endTime)) {
-                    Timber.tag(TAG).d("IN tracking window [$startTime–$endTime] — collecting location (interval=${intervalMs / 1000}s)")
+                    Timber.tag(TAG).d("Collection decision: IN_WINDOW — interval=${intervalMs / 1000}s")
                     collectAndSaveLocation()
-                    delay(intervalMs)
+                    // Sleep only until the window closes or the full interval — whichever comes first.
+                    // This prevents an overshoot where delay() carries us past the end time before
+                    // the next window check runs.
+                    val windowRemainingMs = locationScheduler.millisUntilWindowEnd(endTime)
+                    delay(minOf(intervalMs, windowRemainingMs).coerceAtLeast(1_000L))
                 } else {
                     val waitMs = locationScheduler.millisUntilWindowStart(startTime)
-                    Timber.tag(TAG).d("OUTSIDE tracking window [$startTime–$endTime] — sleeping ${waitMs / 60_000L} min until window opens")
+                    Timber.tag(TAG).d("Collection decision: OUTSIDE_WINDOW — sleeping ${waitMs / 60_000L} min until window opens")
                     delay(waitMs.coerceAtLeast(60_000L))
                 }
             }
@@ -187,12 +194,21 @@ class LocationForegroundService : android.app.Service() {
     }
 
     private suspend fun uploadPendingLocations() {
+        val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
+        val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
+        val currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        Timber.tag(TAG).d("Upload check — Tracking Window: [$startTime–$endTime], Current Time: $currentTime")
+        if (!locationScheduler.isInTrackingWindow(startTime, endTime)) {
+            Timber.tag(TAG).d("Collection decision: OUTSIDE_WINDOW — skipping upload")
+            return
+        }
+
         val pending = locationRepository.getPendingLocations()
         if (pending.isEmpty()) {
             Timber.tag(TAG).d("Upload tick — no pending locations")
             return
         }
-        Timber.tag(TAG).d("Upload tick — ${pending.size} record(s) pending")
+        Timber.tag(TAG).d("Location Count (batch): ${pending.size}")
 
         val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
             Timber.tag(TAG).w("Upload tick — no cached user, skipping")
@@ -205,13 +221,17 @@ class LocationForegroundService : android.app.Service() {
 
         val payload = LocationUploadRequestDto(
             locations = pending.map { record ->
+                val uploadTimestamp = LocalDateTime.ofInstant(
+                    Instant.ofEpochMilli(record.createdAt), ZoneId.systemDefault()
+                ).format(timestampFormatter)
+                Timber.tag(TAG).d("Upload Timestamp: $uploadTimestamp")
                 LocationItemDto(
                     userId = userId,
                     latitude = record.latitude,
                     longitude = record.longitude,
                     clubId = clubId,
                     distance = record.distance.toInt(),
-                    time = timestampFormat.format(Date(record.createdAt))
+                    time = uploadTimestamp
                 )
             }
         )
@@ -270,19 +290,21 @@ class LocationForegroundService : android.app.Service() {
             location.latitude, location.longitude, clubLat, clubLon
         )
 
+        val collectionTimeMs = System.currentTimeMillis()
+        val collectionTimestamp = LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(collectionTimeMs), ZoneId.systemDefault()
+        ).format(timestampFormatter)
+
         locationRepository.saveLocation(
             LocationRecord(
                 latitude = location.latitude,
                 longitude = location.longitude,
                 distance = distance,
                 timestamp = location.time,
-                createdAt = System.currentTimeMillis()
+                createdAt = collectionTimeMs
             )
         )
-        Timber.tag(TAG).i(
-            "Location SAVED — lat=${location.latitude}, lon=${location.longitude}, " +
-            "distance=${distance.toInt()}m, accuracy=${location.accuracy}m"
-        )
+        Timber.tag(TAG).i("Location SAVED — Collection Timestamp: $collectionTimestamp")
     }
 
     private fun isGpsEnabled(): Boolean {

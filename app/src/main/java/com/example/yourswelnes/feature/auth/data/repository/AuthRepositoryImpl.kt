@@ -42,7 +42,7 @@ class AuthRepositoryImpl @Inject constructor(
             redirect = response.redirect?.trim()?.takeIf { it.isNotEmpty() }
         )
         authPreferences.saveAuthData(token = token, user = user)
-        Timber.i("Login succeeded for user %s", user.id)
+        Timber.i("Login succeeded")
         user
     }.recoverCatching { throw it.toFriendlyAuthException("Unable to sign in. Please try again.") }
 
