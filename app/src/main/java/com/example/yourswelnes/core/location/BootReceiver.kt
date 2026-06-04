@@ -14,18 +14,20 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        Timber.tag("BootReceiver").d("ACTION_BOOT_COMPLETED received")
 
         val hasPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasPermission) {
-            Timber.d("Boot completed but location permission not granted — skipping service start")
+            Timber.tag("BootReceiver").w("Location permission not granted — skipping auto-start after boot")
             return
         }
 
-        Timber.d("Boot completed — starting LocationForegroundService and scheduling upload worker")
+        Timber.tag("BootReceiver").d("Permissions OK — starting LocationForegroundService and scheduling upload worker")
         ContextCompat.startForegroundService(context, LocationForegroundService.startIntent(context))
         LocationUploadWorker.schedule(WorkManager.getInstance(context))
+        Timber.tag("BootReceiver").d("Boot-triggered service start complete")
     }
 }

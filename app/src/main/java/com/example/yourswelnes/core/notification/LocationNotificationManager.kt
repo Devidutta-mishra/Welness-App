@@ -61,6 +61,7 @@ class LocationNotificationManager @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(false)
+            .setOnlyAlertOnce(true)  // heads-up only on first show, not every 30s update
             .build()
 
         try {

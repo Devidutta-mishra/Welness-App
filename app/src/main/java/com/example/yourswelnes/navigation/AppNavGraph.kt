@@ -194,14 +194,8 @@ fun AppNavGraph(navController: NavHostController) {
                 viewModel.navigationEvent.collect { event ->
                     when (event) {
                         HomeNavigationEvent.NavigateToLogin -> {
-                            // Route through requirements gate so internet/location are rechecked
-                            // before the user can see or interact with the Login screen.
-                            // Clear the entire back stack — avoids stale Home entries that would
-                            // leave logged-out screens reachable or exit the app on back-press.
-                            navController.navigate(Destinations.requirements(Destinations.LOGIN)) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    inclusive = true
-                                }
+                            navController.navigate(Destinations.LOGIN) {
+                                popUpTo(0) { inclusive = true }
                                 launchSingleTop = true
                             }
                         }

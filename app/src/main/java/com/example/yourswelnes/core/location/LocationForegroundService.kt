@@ -1,14 +1,18 @@
 package com.example.yourswelnes.core.location
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.location.LocationManager
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.core.notification.LocationNotificationManager
+import com.example.yourswelnes.feature.location.data.repository.LocationConfigRepository
 import com.example.yourswelnes.feature.location.data.repository.LocationRepository
 import com.example.yourswelnes.feature.location.domain.model.LocationRecord
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,7 +25,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+
+private const val TAG = "LocationService"
+private const val CONFIG_REFRESH_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
 @AndroidEntryPoint
 class LocationForegroundService : android.app.Service() {
@@ -32,12 +40,34 @@ class LocationForegroundService : android.app.Service() {
     @Inject lateinit var locationPrefs: LocationPreferencesDataStore
     @Inject lateinit var authPrefs: AuthPreferencesDataStore
     @Inject lateinit var locationNotificationManager: LocationNotificationManager
+    @Inject lateinit var locationConfigRepository: LocationConfigRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var trackingJob: Job? = null
+    private var configRefreshJob: Job? = null
+
+    private val gpsStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != LocationManager.PROVIDERS_CHANGED_ACTION) return
+            serviceScope.launch {
+                val gpsOn = isGpsEnabled()
+                val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
+                val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
+                val inWindow = locationScheduler.isInTrackingWindow(startTime, endTime)
+                if (!gpsOn && inWindow) {
+                    Timber.tag(TAG).w("GPS toggled OFF during tracking window — showing notification immediately")
+                    locationNotificationManager.showGpsDisabledNotification()
+                } else if (gpsOn) {
+                    Timber.tag(TAG).d("GPS toggled ON — dismissing GPS-disabled notification")
+                    locationNotificationManager.cancelGpsDisabledNotification()
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
+        Timber.tag(TAG).d("onCreate — starting foreground service")
         try {
             ServiceCompat.startForeground(
                 this,
@@ -46,61 +76,115 @@ class LocationForegroundService : android.app.Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             )
             LocationServiceState.setRunning(true)
+            Timber.tag(TAG).d("Foreground service promoted successfully")
+            val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(gpsStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(gpsStateReceiver, filter)
+            }
+            Timber.tag(TAG).d("GPS state receiver registered")
         } catch (e: SecurityException) {
-            // Location permission not yet granted or app not in eligible foreground state.
-            // Stop immediately — the service will be restarted once the user grants permission.
-            Timber.e(e, "Cannot start location FGS — permission missing or not in foreground")
+            Timber.tag(TAG).e(e, "Cannot start FGS — permission missing or not in foreground state")
             stopSelf()
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Timber.tag(TAG).d("onStartCommand action=${intent?.action ?: "null (Android restart)"}")
         when (intent?.action) {
             ACTION_STOP -> {
+                Timber.tag(TAG).d("Stop action received — shutting down")
                 stopTracking()
                 stopSelf()
             }
-            // ACTION_START or null (null = Android restarted the service via START_STICKY)
             else -> startTracking()
         }
         return START_STICKY
     }
 
     private fun startTracking() {
-        if (trackingJob?.isActive == true) return
+        if (trackingJob?.isActive == true) {
+            Timber.tag(TAG).d("Tracking job already active — ignoring duplicate start")
+            return
+        }
+
+        startConfigRefreshLoop()
+
         trackingJob = serviceScope.launch {
             val token = authPrefs.getToken()
             if (token.isNullOrBlank()) {
-                Timber.w("No auth token — stopping location service")
+                Timber.tag(TAG).w("No auth token found — stopping service")
                 stopSelf()
                 return@launch
             }
+            Timber.tag(TAG).d("Auth token present — fetching tracking config from API")
 
-            val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
-            val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
-            val intervalMs = locationPrefs.getTrackingIntervalSeconds() * 1000L
+            // Fetch fresh config from backend; falls back to DataStore cache if network fails
+            refreshConfigFromApi()
 
-            Timber.d("Location tracking started. Window: $startTime–$endTime, interval: ${intervalMs}ms")
-
+            Timber.tag(TAG).d("Starting location collection loop")
             while (isActive) {
+                // Safety net: stop immediately if token was cleared (e.g. logout)
+                if (authPrefs.getToken().isNullOrBlank()) {
+                    Timber.tag(TAG).w("Auth token gone mid-session — stopping service")
+                    stopSelf()
+                    return@launch
+                }
+
+                // Re-read config every iteration so backend changes take effect without restart
+                val startTime = locationPrefs.getTrackingStartTime() ?: "06:00"
+                val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
+                val intervalMs = locationPrefs.getTrackingIntervalSeconds() * 1000L
+
                 if (locationScheduler.isInTrackingWindow(startTime, endTime)) {
+                    Timber.tag(TAG).d("IN tracking window [$startTime–$endTime] — collecting location (interval=${intervalMs / 1000}s)")
                     collectAndSaveLocation()
                     delay(intervalMs)
                 } else {
                     val waitMs = locationScheduler.millisUntilWindowStart(startTime)
-                    Timber.d("Outside tracking window — resuming in ${waitMs / 60_000L} min")
+                    Timber.tag(TAG).d("OUTSIDE tracking window [$startTime–$endTime] — sleeping ${waitMs / 60_000L} min until window opens")
                     delay(waitMs.coerceAtLeast(60_000L))
                 }
+            }
+            Timber.tag(TAG).d("Collection loop exited (scope cancelled)")
+        }
+    }
+
+    private fun startConfigRefreshLoop() {
+        if (configRefreshJob?.isActive == true) return
+        configRefreshJob = serviceScope.launch {
+            while (isActive) {
+                delay(CONFIG_REFRESH_INTERVAL_MS)
+                Timber.tag(TAG).d("Periodic config refresh triggered (every 30 min)")
+                refreshConfigFromApi()
             }
         }
     }
 
+    private suspend fun refreshConfigFromApi() {
+        locationConfigRepository.getLocationConfig()
+            .onSuccess { config ->
+                Timber.tag(TAG).i(
+                    "Config refreshed from API — window: ${config.trackingStartTime}–${config.trackingEndTime}, " +
+                    "interval: ${config.trackingIntervalSeconds}s, upload: ${config.uploadIntervalMinutes}min"
+                )
+            }
+            .onFailure { err ->
+                Timber.tag(TAG).w("Config refresh failed — using cached values. Reason: ${err.message}")
+            }
+    }
+
     private suspend fun collectAndSaveLocation() {
-        val location = locationTracker.getCurrentLocation()
+        Timber.tag(TAG).d("Requesting GPS location from FusedLocationClient…")
+        val location = withTimeoutOrNull(10_000L) { locationTracker.getCurrentLocation() }
+
         if (location == null) {
             if (!isGpsEnabled()) {
-                Timber.w("GPS disabled during tracking window")
+                Timber.tag(TAG).w("GPS is DISABLED — showing user notification to enable it")
                 locationNotificationManager.showGpsDisabledNotification()
+            } else {
+                Timber.tag(TAG).w("FusedLocationClient returned null (GPS enabled, provider may be warming up)")
             }
             return
         }
@@ -109,7 +193,7 @@ class LocationForegroundService : android.app.Service() {
         val clubLat = locationPrefs.getClubLatitude()
         val clubLon = locationPrefs.getClubLongitude()
         if (clubLat == null || clubLon == null) {
-            Timber.w("Club coordinates not cached — skipping location save")
+            Timber.tag(TAG).w("Club coordinates not in DataStore — cannot calculate distance, skipping save")
             return
         }
 
@@ -126,7 +210,10 @@ class LocationForegroundService : android.app.Service() {
                 createdAt = System.currentTimeMillis()
             )
         )
-        Timber.d("Location saved: (${location.latitude}, ${location.longitude}) dist=${distance}m")
+        Timber.tag(TAG).i(
+            "Location SAVED — lat=${location.latitude}, lon=${location.longitude}, " +
+            "distance=${distance.toInt()}m, accuracy=${location.accuracy}m"
+        )
     }
 
     private fun isGpsEnabled(): Boolean {
@@ -135,12 +222,17 @@ class LocationForegroundService : android.app.Service() {
     }
 
     private fun stopTracking() {
+        Timber.tag(TAG).d("Cancelling tracking and config-refresh jobs")
         trackingJob?.cancel()
         trackingJob = null
+        configRefreshJob?.cancel()
+        configRefreshJob = null
         locationNotificationManager.cancelGpsDisabledNotification()
     }
 
     override fun onDestroy() {
+        Timber.tag(TAG).d("onDestroy — service stopping")
+        runCatching { unregisterReceiver(gpsStateReceiver) }
         stopTracking()
         serviceScope.cancel()
         LocationServiceState.setRunning(false)

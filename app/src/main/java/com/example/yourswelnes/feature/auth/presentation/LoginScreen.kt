@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,7 +150,7 @@ private fun LoginForm(
             .widthIn(max = 420.dp),
         shape = RoundedCornerShape(24.dp),
         color = Color.White,
-        tonalElevation = 2.dp,
+        tonalElevation = 0.dp,
         shadowElevation = 10.dp
     ) {
         Column(
@@ -166,6 +167,12 @@ private fun LoginForm(
                 leadingIcon = {
                     Icon(imageVector = Icons.Filled.Phone, contentDescription = null)
                 },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    disabledContainerColor = Color.White,
+                    errorContainerColor = Color.White
+                ),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Phone,
                     imeAction = ImeAction.Next
@@ -197,6 +204,12 @@ private fun LoginForm(
                         )
                     }
                 },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    disabledContainerColor = Color.White,
+                    errorContainerColor = Color.White
+                ),
                 visualTransformation = if (uiState.isPasswordVisible) {
                     VisualTransformation.None
                 } else {
@@ -254,7 +267,7 @@ private fun LoginForm(
 private fun LoginScreenPreview() {
     YourswelnesTheme {
         LoginScreen(
-            uiState = LoginUiState(phone = "9778750100"),
+            uiState = LoginUiState(phone = "123456"),
             onPhoneChanged = {},
             onPasswordChanged = {},
             onPasswordVisibilityChanged = {},

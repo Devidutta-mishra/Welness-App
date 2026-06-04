@@ -17,6 +17,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.yourswelnes.feature.home.data.repository.GroupDetailsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +29,15 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
+import java.time.LocalTime
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
 class CameraViewModel @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val groupDetailsRepository: GroupDetailsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Idle)
@@ -76,7 +79,8 @@ class CameraViewModel @Inject constructor(
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     viewModelScope.launch(Dispatchers.IO) {
                         try {
-                            val uri = addTimestampAndSave(tempFile)
+                            val activityName = getCurrentActivityName()
+                            val uri = addTimestampAndActivity(tempFile, activityName)
                             tempFile.delete()
                             _uiState.value = CameraUiState.Captured(uri)
                         } catch (e: Exception) {
@@ -94,11 +98,19 @@ class CameraViewModel @Inject constructor(
         )
     }
 
+    private suspend fun getCurrentActivityName(): String? {
+        val slots = groupDetailsRepository.fetchGroupDetails().getOrNull() ?: return null
+        val now = LocalTime.now()
+        return slots.firstOrNull { slot ->
+            !now.isBefore(slot.startTime) && !now.isAfter(slot.endTime)
+        }?.keyword
+    }
+
     fun retake() {
         _uiState.value = CameraUiState.Idle
     }
 
-    private fun addTimestampAndSave(sourceFile: File): Uri {
+    private fun addTimestampAndActivity(sourceFile: File, activityName: String?): Uri {
         val original = BitmapFactory.decodeFile(sourceFile.absolutePath)
         val mutable = original.copy(Bitmap.Config.ARGB_8888, true)
         original.recycle()
@@ -106,6 +118,8 @@ class CameraViewModel @Inject constructor(
         val canvas = Canvas(mutable)
         val timestamp = SimpleDateFormat("yyyy-MM-dd   HH:mm:ss", Locale.getDefault())
             .format(Date())
+        
+        val displayText = if (activityName != null) "$activityName | $timestamp" else timestamp
 
         val textSize = mutable.width * 0.038f
         val margin = mutable.width * 0.03f
@@ -120,7 +134,7 @@ class CameraViewModel @Inject constructor(
         }
 
         val textBounds = Rect()
-        textPaint.getTextBounds(timestamp, 0, timestamp.length, textBounds)
+        textPaint.getTextBounds(displayText, 0, displayText.length, textBounds)
 
         val horizontalPadding = textSize * 0.45f
         val verticalPadding = textSize * 0.32f
@@ -139,7 +153,7 @@ class CameraViewModel @Inject constructor(
 
         val x = boxLeft + horizontalPadding
         val y = boxBottom - verticalPadding
-        canvas.drawText(timestamp, x, y, textPaint)
+        canvas.drawText(displayText, x, y, textPaint)
 
         val outDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
             ?: context.filesDir

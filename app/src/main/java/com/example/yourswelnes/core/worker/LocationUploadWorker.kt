@@ -18,9 +18,14 @@ import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRe
 import com.example.yourswelnes.feature.location.data.repository.LocationRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.firstOrNull
 import timber.log.Timber
+
+private val TIMESTAMP_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
 @HiltWorker
 class LocationUploadWorker @AssistedInject constructor(
@@ -33,21 +38,25 @@ class LocationUploadWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        Timber.tag(TAG).d("doWork started — querying pending locations")
         val pending = locationRepository.getPendingLocations()
         if (pending.isEmpty()) {
-            Timber.d("No pending locations to upload")
+            Timber.tag(TAG).d("No pending locations to upload — nothing to do")
             return Result.success()
         }
+        Timber.tag(TAG).d("Found ${pending.size} pending location record(s) to upload")
 
         val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
-            Timber.w("No cached user — skipping upload")
+            Timber.tag(TAG).w("No cached user — cannot upload, skipping")
             return Result.success()
         }
 
         val clubId = locationPrefs.getClubId() ?: run {
-            Timber.w("Club ID not cached — skipping upload")
+            Timber.tag(TAG).w("Club ID not in DataStore — cannot upload, skipping")
             return Result.success()
         }
+
+        Timber.tag(TAG).d("Preparing upload batch: userId=$userId, clubId=$clubId, count=${pending.size}")
 
         val payload = LocationUploadRequestDto(
             locations = pending.map { record ->
@@ -56,36 +65,46 @@ class LocationUploadWorker @AssistedInject constructor(
                     latitude = record.latitude,
                     longitude = record.longitude,
                     clubId = clubId,
-                    distance = record.distance.toInt()
+                    distance = record.distance.toInt(),
+                    time = TIMESTAMP_FORMAT.format(Date(record.createdAt))
                 )
             }
         )
 
         return try {
+            Timber.tag(TAG).d("Posting ${pending.size} location(s) to /api/store-location")
             val response = locationApi.storeLocations(payload)
             if (response.success == true) {
                 locationRepository.markAsUploaded(pending.map { it.id })
                 locationPrefs.saveLastSyncTime(System.currentTimeMillis())
-                Timber.d("Uploaded ${pending.size} location record(s)")
+                Timber.tag(TAG).i("Upload SUCCESS — ${pending.size} record(s) marked uploaded. Message: ${response.message}")
                 Result.success()
             } else {
-                Timber.w("Upload API returned success=false: ${response.message}")
+                Timber.tag(TAG).w("Upload API returned success=false: ${response.message} — will retry")
                 Result.retry()
             }
         } catch (e: Exception) {
-            Timber.e(e, "Location upload failed — will retry")
+            Timber.tag(TAG).e(e, "Upload FAILED (network/server error) — will retry with backoff")
             Result.retry()
         }
     }
 
     companion object {
+        private const val TAG = "LocationUploadWorker"
         private const val WORK_NAME = "location_upload_periodic"
+
+        fun cancel(workManager: WorkManager) {
+            workManager.cancelUniqueWork(WORK_NAME)
+            Timber.tag(TAG).d("Periodic upload worker cancelled")
+        }
 
         fun schedule(workManager: WorkManager) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
+            // WorkManager minimum periodic interval is 15 min; backend's uploadIntervalMinutes
+            // may be lower (e.g. 10 min) but cannot go below the platform floor.
             val request = PeriodicWorkRequestBuilder<LocationUploadWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
@@ -96,7 +115,7 @@ class LocationUploadWorker @AssistedInject constructor(
                 ExistingPeriodicWorkPolicy.KEEP,
                 request
             )
-            Timber.d("LocationUploadWorker scheduled (15 min, network required)")
+            Timber.tag(TAG).d("Scheduled periodic upload worker (15 min interval, network required)")
         }
     }
 }
