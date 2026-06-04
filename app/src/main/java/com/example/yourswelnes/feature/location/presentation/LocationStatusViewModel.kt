@@ -55,6 +55,10 @@ class LocationStatusViewModel @Inject constructor(
             ) == PackageManager.PERMISSION_GRANTED
         } else true
 
+        Timber.tag("LocationStatusVM").d(
+            "Permissions — fine=$hasFine, background=$hasBackground, notification=$hasNotification"
+        )
+
         _uiState.update {
             it.copy(
                 hasFineLocationPermission = hasFine,
@@ -66,18 +70,25 @@ class LocationStatusViewModel @Inject constructor(
         if (hasFine && hasBackground) {
             startServiceIfNeeded()
             refreshTrackingWindow()
+        } else {
+            Timber.tag("LocationStatusVM").w("Location permissions not fully granted — service will NOT start")
         }
     }
 
     private fun startServiceIfNeeded() {
-        if (LocationServiceState.isRunning.value) return
+        if (LocationServiceState.isRunning.value) {
+            Timber.tag("LocationStatusVM").d("Service already running — skipping start")
+            return
+        }
+        Timber.tag("LocationStatusVM").d("Starting LocationForegroundService")
         try {
             ContextCompat.startForegroundService(
                 context,
                 LocationForegroundService.startIntent(context)
             )
+            Timber.tag("LocationStatusVM").d("startForegroundService called successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to start LocationForegroundService")
+            Timber.tag("LocationStatusVM").e(e, "Failed to start LocationForegroundService")
         }
     }
 

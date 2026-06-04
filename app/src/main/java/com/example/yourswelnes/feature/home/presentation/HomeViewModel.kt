@@ -2,12 +2,18 @@ package com.example.yourswelnes.feature.home.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import androidx.work.WorkManager
+import com.example.yourswelnes.core.location.LocationForegroundService
+import com.example.yourswelnes.core.worker.LocationUploadWorker
 import com.example.yourswelnes.feature.auth.data.repository.AuthRepository
 import com.example.yourswelnes.feature.biometric.security.AppLockManager
 import com.example.yourswelnes.feature.dashboard.data.repository.DashboardRepository
 import com.example.yourswelnes.feature.home.data.repository.ClubRepository
+import com.example.yourswelnes.feature.location.data.repository.LocationConfigRepository
 import com.example.yourswelnes.feature.notifications.data.repository.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,14 +22,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val authRepository: AuthRepository,
     private val clubRepository: ClubRepository,
     private val notificationRepository: NotificationRepository,
     private val dashboardRepository: DashboardRepository,
-    private val appLockManager: AppLockManager
+    private val appLockManager: AppLockManager,
+    private val locationConfigRepository: LocationConfigRepository
 ) : ViewModel() {
 
     val isLockRequired: StateFlow<Boolean> = appLockManager.isLockRequired
@@ -37,6 +46,7 @@ class HomeViewModel @Inject constructor(
     init {
         observeUser()
         loadClubDetails()
+        fetchLocationConfig()
         observeNotifications()
         refreshNotifications()
     }
@@ -53,6 +63,21 @@ class HomeViewModel @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    private fun fetchLocationConfig() {
+        viewModelScope.launch {
+            locationConfigRepository.getLocationConfig()
+                .onSuccess { config ->
+                    Timber.tag("HomeViewModel").d(
+                        "Location config fetched — window: ${config.trackingStartTime}–${config.trackingEndTime}, " +
+                        "interval: ${config.trackingIntervalSeconds}s, upload: ${config.uploadIntervalMinutes}min"
+                    )
+                }
+                .onFailure {
+                    Timber.tag("HomeViewModel").w("Location config fetch failed (cached will be used): ${it.message}")
+                }
         }
     }
 
@@ -116,7 +141,11 @@ class HomeViewModel @Inject constructor(
     fun onLogoutConfirmed() {
         _uiState.update { it.copy(showLogoutDialog = false) }
         viewModelScope.launch {
+            Timber.tag("HomeViewModel").d("Logout confirmed — stopping location service and upload worker")
+            context.stopService(LocationForegroundService.stopIntent(context))
+            LocationUploadWorker.cancel(WorkManager.getInstance(context))
             authRepository.logout()
+            Timber.tag("HomeViewModel").d("Auth cleared — navigating to login")
             navigationEvents.send(HomeNavigationEvent.NavigateToLogin)
         }
     }

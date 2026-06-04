@@ -1,5 +1,6 @@
 package com.example.yourswelnes.feature.home.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -122,7 +123,7 @@ fun HomeScreenContent(
                 onLogoutClick = onLogoutClick
             )
 
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(70.dp))
 
             ProfileHeader(
                 userName = uiState.userName,
@@ -131,7 +132,7 @@ fun HomeScreenContent(
                 profileImageUrl = uiState.profileImageUrl
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(30.dp))
 
             DashboardCard(
                 isLoading = uiState.isDashboardLoading,
@@ -172,6 +173,7 @@ private fun DashboardCard(
                 .clickable(enabled = !isLoading, onClick = onClick),
             shape = RoundedCornerShape(16.dp),
             color = Color.White,
+            border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.5f)),
             shadowElevation = 0.dp,
             tonalElevation = 0.dp
         ) {
@@ -298,8 +300,8 @@ private fun ProfileHeader(
         Surface(
             shape = CircleShape,
             color = Color(0xFFE3F2FD),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
+            tonalElevation = 16.dp,
+            shadowElevation = 15.dp,
             modifier = Modifier.size(140.dp)
         ) {
             if (!profileImageUrl.isNullOrBlank()) {

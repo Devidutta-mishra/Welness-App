@@ -11,7 +11,8 @@ data class LocationItemDto(
     @SerializedName("latitude") val latitude: Double,
     @SerializedName("longitude") val longitude: Double,
     @SerializedName("club_id") val clubId: Int,
-    @SerializedName("distance") val distance: Int
+    @SerializedName("distance") val distance: Int,
+    @SerializedName("time") val time: String
 )
 
 data class LocationUploadResponseDto(

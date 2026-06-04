@@ -1,7 +1,9 @@
 package com.example.yourswelnes.feature.camera.presentation
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,12 +22,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 
 @Composable
@@ -34,8 +39,18 @@ fun CameraPreviewScreen(
     onRetake: () -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Ensure status bar icons are light for the dark photo background
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AsyncImage(
             model = photoUri,
             contentDescription = "Captured photo",
@@ -53,7 +68,7 @@ fun CameraPreviewScreen(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Retake",
-                tint = Color.Black
+                tint = Color.White
             )
         }
 
@@ -71,7 +86,7 @@ fun CameraPreviewScreen(
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
             ) {
-                Text("Retake", color = Color.Black)
+                Text("Retake", color = Color.White)
             }
 
             Button(

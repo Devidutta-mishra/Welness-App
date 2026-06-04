@@ -6,6 +6,7 @@ import com.example.yourswelnes.feature.auth.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,7 +32,17 @@ class SplashViewModel @Inject constructor(
     private fun checkLoginState() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+            val startTime = System.currentTimeMillis()
+            
             val isLoggedIn = authRepository.isLoggedIn()
+            
+            // Ensure splash is visible for at least 2 seconds for branding
+            val elapsedTime = System.currentTimeMillis() - startTime
+            val remainingTime = 1500L - elapsedTime
+            if (remainingTime > 0) {
+                delay(remainingTime)
+            }
+
             _uiState.update {
                 it.copy(isLoading = false, isLoggedIn = isLoggedIn)
             }

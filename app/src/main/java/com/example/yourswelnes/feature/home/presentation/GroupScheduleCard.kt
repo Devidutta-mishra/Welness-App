@@ -1,5 +1,6 @@
 package com.example.yourswelnes.feature.home.presentation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -76,6 +77,7 @@ private fun CurrentActivityCard(
             .shadow(3.dp, shape = RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
+        border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.5f)),
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
