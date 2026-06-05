@@ -49,17 +49,29 @@ class LocationPreferencesDataStore @Inject constructor(
 
     // --- Club info ---
 
-    suspend fun saveClubInfo(clubId: Int, latitude: Double, longitude: Double) {
+    suspend fun saveClubInfo(clubId: Int, latitude: Double, longitude: Double, clubName: String) {
         dataStore.edit { prefs ->
             prefs[KEY_CLUB_ID] = clubId
             prefs[KEY_CLUB_LATITUDE] = latitude
             prefs[KEY_CLUB_LONGITUDE] = longitude
+            prefs[KEY_CLUB_NAME] = clubName
+        }
+    }
+
+    /** Removes all club info so location collection stops until a valid club is fetched. */
+    suspend fun clearClubInfo() {
+        dataStore.edit { prefs ->
+            prefs.remove(KEY_CLUB_ID)
+            prefs.remove(KEY_CLUB_LATITUDE)
+            prefs.remove(KEY_CLUB_LONGITUDE)
+            prefs.remove(KEY_CLUB_NAME)
         }
     }
 
     suspend fun getClubId(): Int? = dataStore.data.firstOrNull()?.get(KEY_CLUB_ID)
     suspend fun getClubLatitude(): Double? = dataStore.data.firstOrNull()?.get(KEY_CLUB_LATITUDE)
     suspend fun getClubLongitude(): Double? = dataStore.data.firstOrNull()?.get(KEY_CLUB_LONGITUDE)
+    suspend fun getClubName(): String? = dataStore.data.firstOrNull()?.get(KEY_CLUB_NAME)
 
     // --- Upload sync status ---
 
@@ -90,6 +102,7 @@ class LocationPreferencesDataStore @Inject constructor(
         val KEY_CLUB_ID = intPreferencesKey("club_id")
         val KEY_CLUB_LATITUDE = doublePreferencesKey("club_latitude")
         val KEY_CLUB_LONGITUDE = doublePreferencesKey("club_longitude")
+        val KEY_CLUB_NAME = stringPreferencesKey("club_name")
         val KEY_LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
         val KEY_LAST_SCHEDULE_SYNC_TIME = longPreferencesKey("last_schedule_sync_time")
     }

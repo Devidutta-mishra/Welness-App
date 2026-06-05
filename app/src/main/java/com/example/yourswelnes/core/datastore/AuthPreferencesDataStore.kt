@@ -107,6 +107,8 @@ class AuthPreferencesDataStore @Inject constructor(
             KEY_TOKEN, KEY_LOGGED_IN, KEY_USER_ID, KEY_DISPLAY_ID, KEY_USER_NAME, KEY_USER_EMAIL,
             KEY_USER_PHONE, KEY_USER_GENDER, KEY_USER_ROLE, KEY_USER_STATUS,
             KEY_USER_LEVEL, KEY_USER_IMAGE, KEY_PROFILE_IMAGE, KEY_REDIRECT
+            // FCM token is intentionally NOT in SESSION_KEYS — it belongs to the device,
+            // not the user session. It must survive logout so the next login can use it.
         )
     }
 }

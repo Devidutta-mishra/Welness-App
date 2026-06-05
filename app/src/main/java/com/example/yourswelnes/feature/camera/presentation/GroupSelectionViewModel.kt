@@ -29,7 +29,7 @@ class GroupSelectionViewModel @Inject constructor(
     val uiState: StateFlow<GroupSelectionUiState> = _uiState.asStateFlow()
 
     init {
-        loadGroups()
+        loadGroups(forceRefresh = true)
     }
 
     fun loadGroups(forceRefresh: Boolean = false) {

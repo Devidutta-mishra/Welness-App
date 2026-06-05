@@ -7,6 +7,7 @@ import com.example.yourswelnes.data.local.room.MIGRATION_1_2
 import com.example.yourswelnes.data.local.room.MIGRATION_2_3
 import com.example.yourswelnes.data.local.room.MIGRATION_3_4
 import com.example.yourswelnes.data.local.room.MIGRATION_4_5
+import com.example.yourswelnes.data.local.room.MIGRATION_5_6
 import com.example.yourswelnes.data.local.room.dao.AppMonitoringDao
 import com.example.yourswelnes.data.local.room.dao.LocationDao
 import com.example.yourswelnes.data.local.room.dao.NotificationDao
@@ -28,7 +29,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "yourswelnes.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
 
     @Provides
     @Singleton

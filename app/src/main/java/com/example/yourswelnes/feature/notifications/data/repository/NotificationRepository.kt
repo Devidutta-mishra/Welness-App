@@ -9,4 +9,6 @@ interface NotificationRepository {
     suspend fun markAsRead(notificationId: Int): Result<Unit>
     suspend fun refreshNotifications(): Result<List<NotificationItem>>
     fun getUnreadCount(notifications: List<NotificationItem>): Int
+    /** Clears the in-memory notification list. Must be called on logout to prevent cross-user leakage. */
+    fun clearCache()
 }

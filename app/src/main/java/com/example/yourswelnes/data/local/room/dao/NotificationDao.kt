@@ -24,10 +24,10 @@ interface NotificationDao {
     @Query("UPDATE notifications SET is_displayed = 1 WHERE id = :id")
     suspend fun markDisplayed(id: Int)
 
-    @Query("SELECT * FROM notifications ORDER BY id DESC")
-    suspend fun getAll(): List<NotificationEntity>
+    // All queries filter by userId so User A's rows are never visible to User B.
+    @Query("SELECT * FROM notifications WHERE user_id = :userId ORDER BY id DESC")
+    suspend fun getAllForUser(userId: String): List<NotificationEntity>
 
-    // Entries that need a system notification: never shown before, regardless of read state.
-    @Query("SELECT * FROM notifications WHERE is_displayed = 0")
-    suspend fun getUndisplayed(): List<NotificationEntity>
+    @Query("SELECT * FROM notifications WHERE user_id = :userId AND is_displayed = 0")
+    suspend fun getUndisplayedForUser(userId: String): List<NotificationEntity>
 }

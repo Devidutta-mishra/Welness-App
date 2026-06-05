@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
 }
 
 android {
@@ -77,10 +76,6 @@ dependencies {
 
     // Timber
     implementation(libs.timber)
-
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.messaging)
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)

@@ -5,11 +5,16 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import androidx.work.WorkManager
 import com.example.yourswelnes.core.location.LocationForegroundService
+import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.NotificationSyncWorker
+import com.example.yourswelnes.core.worker.ScheduleSyncWorker
+import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.feature.auth.data.repository.AuthRepository
 import com.example.yourswelnes.feature.biometric.security.AppLockManager
 import com.example.yourswelnes.feature.dashboard.data.repository.DashboardRepository
 import com.example.yourswelnes.feature.home.data.repository.ClubRepository
+import com.example.yourswelnes.feature.home.data.repository.GroupDetailsRepository
 import com.example.yourswelnes.feature.location.data.repository.LocationConfigRepository
 import com.example.yourswelnes.feature.notifications.data.repository.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,7 +37,9 @@ class HomeViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val dashboardRepository: DashboardRepository,
     private val appLockManager: AppLockManager,
-    private val locationConfigRepository: LocationConfigRepository
+    private val locationConfigRepository: LocationConfigRepository,
+    private val groupDetailsRepository: GroupDetailsRepository,
+    private val locationPrefs: LocationPreferencesDataStore
 ) : ViewModel() {
 
     val isLockRequired: StateFlow<Boolean> = appLockManager.isLockRequired
@@ -49,6 +56,16 @@ class HomeViewModel @Inject constructor(
         fetchLocationConfig()
         observeNotifications()
         refreshNotifications()
+        rescheduleWorkers()
+    }
+
+    private fun rescheduleWorkers() {
+        val workManager = WorkManager.getInstance(context)
+        LocationUploadWorker.schedule(workManager)
+        ScheduleSyncWorker.schedule(workManager)
+        NotificationSyncWorker.schedule(workManager)
+        AppInstallationSyncWorker.schedulePeriodic(workManager)
+        // No need to scheduleOneTime for AppInstallation here as it's intended for app start
     }
 
     private fun observeUser() {
@@ -84,6 +101,11 @@ class HomeViewModel @Inject constructor(
     private fun loadClubDetails() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
+            // Wipe stale club info BEFORE the API call. Any upload worker that fires
+            // during the API round-trip will see getClubId() = null and skip.
+            // Prevents old club data from a previous session being used for uploads
+            // before the current session's club membership is confirmed.
+            locationPrefs.clearClubInfo()
             clubRepository.getClubDetails()
                 .onSuccess { details ->
                     _uiState.update { it.copy(isLoading = false, clubName = details.clubName) }
@@ -92,7 +114,7 @@ class HomeViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            clubName = "Club information unavailable",
+                            clubName = "Zoom Club",
                             error = error.message
                         )
                     }
@@ -141,11 +163,28 @@ class HomeViewModel @Inject constructor(
     fun onLogoutConfirmed() {
         _uiState.update { it.copy(showLogoutDialog = false) }
         viewModelScope.launch {
-            Timber.tag("HomeViewModel").d("Logout confirmed — stopping location service and upload worker")
+            Timber.tag("HomeViewModel").d("Logout — beginning full session cleanup")
+            val workManager = WorkManager.getInstance(context)
+
+            // 1. Stop location service so it doesn't collect/upload under the leaving user.
             context.stopService(LocationForegroundService.stopIntent(context))
-            LocationUploadWorker.cancel(WorkManager.getInstance(context))
+
+            // 2. Cancel all user-bound workers. They will be rescheduled when User B logs in
+            //    and the app starts fresh (YourswelnesApplication.onCreate re-enqueues them).
+            LocationUploadWorker.cancel(workManager)
+            ScheduleSyncWorker.cancel(workManager)
+            NotificationSyncWorker.cancel(workManager)
+            AppInstallationSyncWorker.cancel(workManager)
+
+            // 3. Clear all in-memory and persisted caches scoped to the leaving user.
+            groupDetailsRepository.clearCache()
+            notificationRepository.clearCache()
+            locationPrefs.clearClubInfo()  // prevents stale club info being used by next user's service
+
+            // 4. Wipe the auth session — this revokes the bearer token for all future requests.
             authRepository.logout()
-            Timber.tag("HomeViewModel").d("Auth cleared — navigating to login")
+
+            Timber.tag("HomeViewModel").d("Session cleanup complete — navigating to login")
             navigationEvents.send(HomeNavigationEvent.NavigateToLogin)
         }
     }
