@@ -40,7 +40,12 @@ class LocationPreferencesDataStore @Inject constructor(
     suspend fun getTrackingStartTime(): String? = dataStore.data.firstOrNull()?.get(KEY_START_TIME)
     suspend fun getTrackingEndTime(): String? = dataStore.data.firstOrNull()?.get(KEY_END_TIME)
     suspend fun getTrackingIntervalSeconds(): Int = dataStore.data.firstOrNull()?.get(KEY_INTERVAL_SECONDS) ?: 30
-    suspend fun getUploadIntervalMinutes(): Int = UPLOAD_INTERVAL_MINUTES
+
+    // Honors the backend-provided upload cadence saved by saveTrackingConfig. Falls back to the
+    // default when unset and is coerced to >= 1 min so a 0/negative config can't spin the loop.
+    suspend fun getUploadIntervalMinutes(): Int =
+        (dataStore.data.firstOrNull()?.get(KEY_UPLOAD_INTERVAL_MINUTES) ?: DEFAULT_UPLOAD_INTERVAL_MINUTES)
+            .coerceAtLeast(1)
 
     // --- Club info ---
 
@@ -56,7 +61,7 @@ class LocationPreferencesDataStore @Inject constructor(
     suspend fun getClubLatitude(): Double? = dataStore.data.firstOrNull()?.get(KEY_CLUB_LATITUDE)
     suspend fun getClubLongitude(): Double? = dataStore.data.firstOrNull()?.get(KEY_CLUB_LONGITUDE)
 
-    // --- Sync status ---
+    // --- Upload sync status ---
 
     suspend fun saveLastSyncTime(timestamp: Long) {
         dataStore.edit { prefs -> prefs[KEY_LAST_SYNC_TIME] = timestamp }
@@ -66,8 +71,17 @@ class LocationPreferencesDataStore @Inject constructor(
 
     val lastSyncTime = dataStore.data.map { it[KEY_LAST_SYNC_TIME] }
 
+    // --- Schedule sync status ---
+
+    suspend fun saveLastScheduleSyncTime(timestamp: Long) {
+        dataStore.edit { prefs -> prefs[KEY_LAST_SCHEDULE_SYNC_TIME] = timestamp }
+    }
+
+    suspend fun getLastScheduleSyncTime(): Long? =
+        dataStore.data.firstOrNull()?.get(KEY_LAST_SCHEDULE_SYNC_TIME)
+
     private companion object {
-        const val UPLOAD_INTERVAL_MINUTES = 2
+        const val DEFAULT_UPLOAD_INTERVAL_MINUTES = 2
 
         val KEY_START_TIME = stringPreferencesKey("tracking_start_time")
         val KEY_END_TIME = stringPreferencesKey("tracking_end_time")
@@ -77,5 +91,6 @@ class LocationPreferencesDataStore @Inject constructor(
         val KEY_CLUB_LATITUDE = doublePreferencesKey("club_latitude")
         val KEY_CLUB_LONGITUDE = doublePreferencesKey("club_longitude")
         val KEY_LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
+        val KEY_LAST_SCHEDULE_SYNC_TIME = longPreferencesKey("last_schedule_sync_time")
     }
 }

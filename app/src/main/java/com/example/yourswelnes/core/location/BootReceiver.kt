@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.work.WorkManager
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.ScheduleSyncWorker
 import timber.log.Timber
 
 class BootReceiver : BroadcastReceiver() {
@@ -27,7 +28,9 @@ class BootReceiver : BroadcastReceiver() {
 
         Timber.tag("BootReceiver").d("Permissions OK — starting LocationForegroundService and scheduling upload worker")
         ContextCompat.startForegroundService(context, LocationForegroundService.startIntent(context))
-        LocationUploadWorker.schedule(WorkManager.getInstance(context))
+        val workManager = WorkManager.getInstance(context)
+        LocationUploadWorker.schedule(workManager)
+        ScheduleSyncWorker.schedule(workManager)
         Timber.tag("BootReceiver").d("Boot-triggered service start complete")
     }
 }

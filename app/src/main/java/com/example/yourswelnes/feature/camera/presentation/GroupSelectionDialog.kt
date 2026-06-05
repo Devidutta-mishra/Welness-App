@@ -80,7 +80,7 @@ fun GroupSelectionDialog(
 
                     error != null -> {
                         Text(
-                            text = error,
+                            text = "We couldn't load your assigned groups. Please try again or contact your administrator if the issue persists.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(vertical = 8.dp)

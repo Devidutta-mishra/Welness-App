@@ -167,20 +167,22 @@ private fun NotificationItemCard(
 ) {
     val typeColor = notificationTypeColor(item.type)
     
+    val cardBackground = if (item.isRead) Color.White else Color(0xFFFFF8F5)
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = Color.White,
+        color = cardBackground,
         tonalElevation = 0.dp
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
-            // Left color bar
+            // Left color bar — thicker for unread to emphasise new content
             Box(
                 modifier = Modifier
-                    .width(4.dp)
+                    .width(if (item.isRead) 4.dp else 6.dp)
                     .fillMaxHeight()
                     .background(typeColor)
             )
@@ -191,24 +193,36 @@ private fun NotificationItemCard(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header: Title and Badge
+                // Header: Title, unread dot, and Badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
-                    )
-                    
+                    ) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (item.isRead) FontWeight.Normal else FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!item.isRead) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.width(8.dp))
-                    
+
                     TypeBadge(type = item.type, color = typeColor)
                 }
 

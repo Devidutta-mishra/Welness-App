@@ -4,6 +4,12 @@ import com.example.yourswelnes.feature.location.domain.model.LocationRecord
 
 interface LocationRepository {
     suspend fun saveLocation(record: LocationRecord)
-    suspend fun getPendingLocations(userId: String): List<LocationRecord>
+
+    /** Returns up to [limit] oldest not-yet-uploaded records for the user. */
+    suspend fun getPendingLocations(userId: String, limit: Int): List<LocationRecord>
+
     suspend fun markAsUploaded(ids: List<Long>)
+
+    /** Deletes records the backend has already confirmed, keeping the table bounded. */
+    suspend fun purgeUploadedLocations()
 }
