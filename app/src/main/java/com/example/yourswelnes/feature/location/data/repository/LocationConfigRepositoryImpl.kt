@@ -8,23 +8,48 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
 
+private const val TAG = "ScheduleSync"
+
 @Singleton
 class LocationConfigRepositoryImpl @Inject constructor(
     private val locationApi: LocationApi,
     private val locationPrefs: LocationPreferencesDataStore
 ) : LocationConfigRepository {
 
-    override suspend fun getLocationConfig(): Result<LocationConfig> = runCatching {
-        val config = locationApi.getLocationConfig().toDomain()
-        locationPrefs.saveTrackingConfig(
-            startTime = config.trackingStartTime,
-            endTime = config.trackingEndTime,
-            intervalSeconds = config.trackingIntervalSeconds,
-            uploadIntervalMinutes = config.uploadIntervalMinutes
-        )
-        config
-    }.onFailure {
-        Timber.e(it, "Failed to fetch location config")
+    /**
+     * Fetches the latest tracking schedule from the server and caches it locally.
+     *
+     * On success — updates DataStore and returns the new config.
+     * On failure — logs the cached fallback and returns failure so callers can react if needed.
+     *   The cached schedule remains intact; tracking continues uninterrupted.
+     */
+    override suspend fun getLocationConfig(): Result<LocationConfig> {
+        val result = runCatching {
+            val config = locationApi.getLocationConfig().toDomain()
+            locationPrefs.saveTrackingConfig(
+                startTime = config.trackingStartTime,
+                endTime = config.trackingEndTime,
+                intervalSeconds = config.trackingIntervalSeconds,
+                uploadIntervalMinutes = config.uploadIntervalMinutes
+            )
+            locationPrefs.saveLastScheduleSyncTime(System.currentTimeMillis())
+            Timber.tag(TAG).i(
+                "LOCATION SCHEDULE SYNC | API SUCCESS | " +
+                "start=${config.trackingStartTime} end=${config.trackingEndTime} saved locally"
+            )
+            config
+        }
+
+        result.onFailure { error ->
+            val cachedStart = locationPrefs.getTrackingStartTime() ?: "N/A"
+            val cachedEnd = locationPrefs.getTrackingEndTime() ?: "N/A"
+            Timber.tag(TAG).w(
+                "LOCATION SCHEDULE SYNC | API FAILED | " +
+                "using cached schedule start=$cachedStart end=$cachedEnd | reason=${error.message}"
+            )
+        }
+
+        return result
     }
 
     /** Returns the last successfully fetched config from DataStore (used when offline). */

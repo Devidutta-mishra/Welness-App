@@ -7,6 +7,7 @@ import androidx.work.WorkManager
 import com.example.yourswelnes.core.notification.LocationNotificationManager
 import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.ScheduleSyncWorker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import timber.log.Timber
@@ -30,6 +31,7 @@ class YourswelnesApplication : Application(), Configuration.Provider {
         locationNotificationManager.createChannels()
         val workManager = WorkManager.getInstance(this)
         LocationUploadWorker.schedule(workManager)
+        ScheduleSyncWorker.schedule(workManager)
         AppInstallationSyncWorker.schedulePeriodic(workManager)
         AppInstallationSyncWorker.scheduleOneTime(workManager)
     }

@@ -19,6 +19,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.example.yourswelnes.core.notification.NotificationDeepLink
 import com.example.yourswelnes.feature.auth.presentation.LoginEvent
 import com.example.yourswelnes.feature.auth.presentation.LoginScreen
 import com.example.yourswelnes.feature.auth.presentation.LoginViewModel
@@ -222,6 +223,16 @@ fun AppNavGraph(navController: NavHostController) {
                 viewModel.refreshNotifications()
             }
 
+            // React to system notification taps — navigate to Notifications and mark read.
+            LaunchedEffect(Unit) {
+                NotificationDeepLink.pendingNotificationId.collect { notifId ->
+                    if (notifId != null) {
+                        navController.navigate(Destinations.NOTIFICATIONS)
+                        NotificationDeepLink.consume()
+                    }
+                }
+            }
+
             HomeScreen(
                 viewModel = viewModel,
                 onCameraWithGroup = { groupId -> navController.navigate(Destinations.camera(groupId)) },
@@ -232,7 +243,17 @@ fun AppNavGraph(navController: NavHostController) {
         }
 
         composable(Destinations.NOTIFICATIONS) {
-            NotificationScreen(onBack = { navController.popBackStack() })
+            val notifViewModel: com.example.yourswelnes.feature.notifications.presentation.NotificationViewModel = hiltViewModel()
+            // If we arrived here via a notification tray tap, the pending ID was set before
+            // navigation. Mark it read now that the screen is visible.
+            LaunchedEffect(Unit) {
+                val pendingId = NotificationDeepLink.pendingNotificationId.value
+                if (pendingId != null) {
+                    notifViewModel.markAsReadExternal(pendingId)
+                    NotificationDeepLink.consume()
+                }
+            }
+            NotificationScreen(onBack = { navController.popBackStack() }, viewModel = notifViewModel)
         }
 
         composable(Destinations.LOCATION_PERMISSION) {

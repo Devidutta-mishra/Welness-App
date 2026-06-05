@@ -24,6 +24,8 @@ datastore = "1.1.1"
 browser = "1.8.0"
 biometric = "1.1.0"
 appcompat = "1.7.0"
+mockk = "1.14.2"
+coroutines = "1.9.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -94,6 +96,10 @@ androidx-browser = { group = "androidx.browser", name = "browser", version.ref =
 # Biometric
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+
+# Testing (JVM unit tests only)
+mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

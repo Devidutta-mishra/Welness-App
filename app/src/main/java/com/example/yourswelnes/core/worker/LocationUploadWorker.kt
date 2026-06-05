@@ -10,103 +10,25 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
-import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
-import com.example.yourswelnes.core.location.LocationUploadLock
-import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationItemDto
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRequestDto
-import com.example.yourswelnes.feature.location.data.repository.LocationRepository
+import com.example.yourswelnes.core.location.LocationUploader
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
-
-private val TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
 @HiltWorker
 class LocationUploadWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val locationRepository: LocationRepository,
-    private val locationApi: LocationApi,
-    private val locationPrefs: LocationPreferencesDataStore,
-    private val authPrefs: AuthPreferencesDataStore,
-    private val uploadLock: LocationUploadLock
+    private val locationUploader: LocationUploader
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Timber.tag(TAG).d("doWork started — querying pending locations")
-
-        return uploadLock.mutex.withLock {
-            val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
-                Timber.tag(TAG).w("No cached user — cannot upload, skipping")
-                return@withLock Result.success()
-            }
-
-            val pending = locationRepository.getPendingLocations(userId)
-            if (pending.isEmpty()) {
-                Timber.tag(TAG).d("No pending locations for user $userId — nothing to do")
-                return@withLock Result.success()
-            }
-
-            val clubId = locationPrefs.getClubId() ?: run {
-                Timber.tag(TAG).w("Club ID not in DataStore — cannot upload, skipping")
-                return@withLock Result.success()
-            }
-
-            val ids = pending.map { it.id }
-            val oldestTs = LocalDateTime.ofInstant(
-                Instant.ofEpochMilli(pending.first().timestamp), ZoneId.systemDefault()
-            ).format(TIMESTAMP_FORMATTER)
-            val newestTs = LocalDateTime.ofInstant(
-                Instant.ofEpochMilli(pending.last().timestamp), ZoneId.systemDefault()
-            ).format(TIMESTAMP_FORMATTER)
-            Timber.tag(TAG).i(
-                "UPLOAD START | userId=$userId | count=${pending.size} | " +
-                "locationIds=$ids | range=$oldestTs -> $newestTs"
-            )
-
-            val payload = LocationUploadRequestDto(
-                locations = pending.map { record ->
-                    val collectionTimestamp = LocalDateTime.ofInstant(
-                        Instant.ofEpochMilli(record.timestamp), ZoneId.systemDefault()
-                    ).format(TIMESTAMP_FORMATTER)
-                    LocationItemDto(
-                        userId = userId,
-                        latitude = record.latitude,
-                        longitude = record.longitude,
-                        clubId = clubId,
-                        distance = record.distance.toInt(),
-                        time = collectionTimestamp
-                    )
-                }
-            )
-
-            try {
-                val response = locationApi.storeLocations(payload)
-                if (response.success == true) {
-                    locationRepository.markAsUploaded(ids)
-                    locationPrefs.saveLastSyncTime(System.currentTimeMillis())
-                    Timber.tag(TAG).i(
-                        "UPLOAD SUCCESS | userId=$userId | uploadedCount=${ids.size} | " +
-                        "markedUploaded=$ids"
-                    )
-                    Result.success()
-                } else {
-                    Timber.tag(TAG).w("Upload API returned success=false: ${response.message} — will retry")
-                    Result.retry()
-                }
-            } catch (e: Exception) {
-                Timber.tag(TAG).e(e, "Upload FAILED (network/server error) — will retry with backoff")
-                Result.retry()
-            }
+        Timber.tag(TAG).d("doWork started — draining pending locations")
+        return when (locationUploader.uploadPending()) {
+            LocationUploader.Result.SUCCESS,
+            LocationUploader.Result.NOTHING_TO_DO -> Result.success()
+            LocationUploader.Result.FAILED -> Result.retry()
         }
     }
 

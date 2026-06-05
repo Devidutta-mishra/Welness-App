@@ -78,6 +78,9 @@ class NotificationViewModel @Inject constructor(
         }
     }
 
+    /** Called from NavGraph when the screen is opened via a system notification tap. */
+    fun markAsReadExternal(notificationId: Int) = markAsRead(notificationId)
+
     fun refresh() {
         viewModelScope.launch {
             _isLoading.value = true

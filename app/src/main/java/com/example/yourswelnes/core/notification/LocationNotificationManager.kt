@@ -14,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class LocationNotificationManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val notificationManager: NotificationManagerCompat
+    private val notificationManager: NotificationManagerCompat,
+    private val appNotificationManager: AppNotificationManager
 ) {
     fun createChannels() {
         val serviceChannel = NotificationChannel(
@@ -36,6 +37,8 @@ class LocationNotificationManager @Inject constructor(
 
         notificationManager.createNotificationChannel(serviceChannel)
         notificationManager.createNotificationChannel(gpsAlertChannel)
+
+        appNotificationManager.createChannel()
     }
 
     fun buildServiceNotification() =
