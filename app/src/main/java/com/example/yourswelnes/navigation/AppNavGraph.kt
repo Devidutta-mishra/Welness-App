@@ -223,7 +223,9 @@ fun AppNavGraph(navController: NavHostController) {
                 viewModel.refreshNotifications()
             }
 
-            // React to system notification taps — navigate to Notifications and mark read.
+            // React to notification taps (our own PendingIntent OR FCM SDK auto-notification).
+            // notifId > 0 : specific notification → navigate + mark read
+            // notifId == -1: FCM tap with no specific ID → just navigate to the list
             LaunchedEffect(Unit) {
                 NotificationDeepLink.pendingNotificationId.collect { notifId ->
                     if (notifId != null) {
@@ -248,8 +250,11 @@ fun AppNavGraph(navController: NavHostController) {
             // navigation. Mark it read now that the screen is visible.
             LaunchedEffect(Unit) {
                 val pendingId = NotificationDeepLink.pendingNotificationId.value
-                if (pendingId != null) {
+                if (pendingId != null && pendingId != -1) {
+                    // -1 is the FCM sentinel: open the list but no specific item to mark read
                     notifViewModel.markAsReadExternal(pendingId)
+                    NotificationDeepLink.consume()
+                } else if (pendingId == -1) {
                     NotificationDeepLink.consume()
                 }
             }

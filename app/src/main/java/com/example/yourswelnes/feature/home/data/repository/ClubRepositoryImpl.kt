@@ -19,9 +19,12 @@ class ClubRepositoryImpl @Inject constructor(
         Timber.d("Club API Response: %s", response)
         val domain = response.toDomain()
         if (response.success == true && domain.clubName.isNotBlank()) {
-            locationPrefs.saveClubInfo(domain.id, domain.latitude, domain.longitude)
+            locationPrefs.saveClubInfo(domain.id, domain.latitude, domain.longitude, domain.clubName)
             domain
         } else {
+            // No valid club for this user — clear any stale club info so location
+            // collection does not continue with a previous user's club coordinates.
+            locationPrefs.clearClubInfo()
             val errorMsg = response.message ?: "Club information not found"
             Timber.e("Club API error: %s", errorMsg)
             throw Exception(errorMsg)

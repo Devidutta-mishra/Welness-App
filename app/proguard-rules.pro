@@ -20,7 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Preserve annotations used by Hilt, Retrofit, Room and Firebase
+# Preserve annotations used by Hilt, Retrofit and Room
 -keepattributes *Annotation*
 -keepattributes Signature
 -keepattributes Exceptions
@@ -50,10 +50,6 @@
 # WorkManager
 -keep class androidx.work.** { *; }
 -dontwarn androidx.work.**
-
-# Firebase
--keep class com.google.firebase.** { *; }
--dontwarn com.google.firebase.**
 
 # Kotlin metadata
 -keep class kotlin.Metadata { *; }

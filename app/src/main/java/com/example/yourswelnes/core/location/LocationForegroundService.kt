@@ -220,6 +220,24 @@ class LocationForegroundService : android.app.Service() {
             return
         }
 
+        // Gate 1: club must be assigned for this user before any GPS work is done.
+        // club info is populated by ClubRepositoryImpl after login; absent means the
+        // user has no club on the server or the fetch hasn't completed yet.
+        val clubName = locationPrefs.getClubName()
+        if (clubName.isNullOrBlank()) {
+            Timber.tag(TAG).w("No club assigned to user $userId — skipping location collection")
+            return
+        }
+
+        // Gate 2: club coordinates must be present (saved alongside the name).
+        val clubLat = locationPrefs.getClubLatitude()
+        val clubLon = locationPrefs.getClubLongitude()
+        if (clubLat == null || clubLon == null) {
+            Timber.tag(TAG).w("Club coordinates missing for user $userId — skipping location collection")
+            return
+        }
+
+        // All pre-conditions met — now request the GPS fix.
         Timber.tag(TAG).d("Requesting GPS location from FusedLocationClient…")
         val location = withTimeoutOrNull(10_000L) { locationTracker.getCurrentLocation() }
 
@@ -233,13 +251,6 @@ class LocationForegroundService : android.app.Service() {
             return
         }
         locationNotificationManager.cancelGpsDisabledNotification()
-
-        val clubLat = locationPrefs.getClubLatitude()
-        val clubLon = locationPrefs.getClubLongitude()
-        if (clubLat == null || clubLon == null) {
-            Timber.tag(TAG).w("Club coordinates not in DataStore — cannot calculate distance, skipping save")
-            return
-        }
 
         val distance = locationScheduler.calculateDistance(
             location.latitude, location.longitude, clubLat, clubLon

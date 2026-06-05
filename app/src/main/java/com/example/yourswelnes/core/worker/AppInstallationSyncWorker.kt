@@ -62,6 +62,12 @@ class AppInstallationSyncWorker @AssistedInject constructor(
         }
 
         /** Fires once immediately on app launch. KEEP policy avoids duplicate runs. */
+        fun cancel(workManager: WorkManager) {
+            workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
+            workManager.cancelUniqueWork(WORK_NAME_ONCE)
+            Timber.d("AppInstallationSyncWorker cancelled")
+        }
+
         fun scheduleOneTime(workManager: WorkManager) {
             val request = OneTimeWorkRequestBuilder<AppInstallationSyncWorker>()
                 .setConstraints(networkConstraints)

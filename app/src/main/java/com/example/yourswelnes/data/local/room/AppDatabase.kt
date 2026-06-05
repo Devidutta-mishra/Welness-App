@@ -13,7 +13,7 @@ import com.example.yourswelnes.data.local.room.entity.NotificationEntity
 
 @Database(
     entities = [LocationEntity::class, AppMonitoringEntity::class, NotificationEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -67,6 +67,16 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 `created_at` TEXT NOT NULL,
                 PRIMARY KEY(`id`)
             )"""
+        )
+    }
+}
+
+// Adds user_id to the notifications table for cross-user isolation.
+// Existing rows get an empty string default; they will be overwritten on next fetch.
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            "ALTER TABLE `notifications` ADD COLUMN `user_id` TEXT NOT NULL DEFAULT ''"
         )
     }
 }

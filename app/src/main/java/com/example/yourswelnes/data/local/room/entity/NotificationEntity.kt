@@ -8,6 +8,10 @@ import androidx.room.PrimaryKey
 data class NotificationEntity(
     @PrimaryKey
     @ColumnInfo(name = "id") val id: Int,
+    // Every row is owned by the user whose session fetched it. All DAO queries
+    // that return rows must filter by this column so User A's notifications never
+    // appear for User B — even if both accounts log in on the same device.
+    @ColumnInfo(name = "user_id") val userId: String,
     @ColumnInfo(name = "title") val title: String,
     @ColumnInfo(name = "message") val message: String,
     @ColumnInfo(name = "type") val type: String,

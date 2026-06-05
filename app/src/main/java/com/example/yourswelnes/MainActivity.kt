@@ -37,10 +37,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleNotificationIntent(intent: Intent?) {
-        if (intent?.action == AppNotificationManager.ACTION_OPEN_NOTIFICATIONS) {
-            val notifId = intent.getIntExtra(AppNotificationManager.EXTRA_NOTIFICATION_ID, -1)
-                .takeIf { it != -1 }
-            NotificationDeepLink.set(notifId)
+        when {
+            // Tapped our own notification (shown by AppNotificationManager or onMessageReceived)
+            intent?.action == AppNotificationManager.ACTION_OPEN_NOTIFICATIONS -> {
+                val notifId = intent.getIntExtra(AppNotificationManager.EXTRA_NOTIFICATION_ID, -1)
+                    .takeIf { it != -1 }
+                NotificationDeepLink.set(notifId)
+            }
         }
     }
 

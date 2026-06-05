@@ -1,5 +1,6 @@
 package com.example.yourswelnes.feature.notifications.data.repository
 
+import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.notification.AppNotificationManager
 import com.example.yourswelnes.data.local.room.dao.NotificationDao
 import com.example.yourswelnes.data.local.room.entity.NotificationEntity
@@ -12,6 +13,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import timber.log.Timber
 
@@ -21,7 +23,8 @@ private const val TAG = "NotificationRepo"
 class NotificationRepositoryImpl @Inject constructor(
     private val notificationApi: NotificationApi,
     private val notificationDao: NotificationDao,
-    private val appNotificationManager: AppNotificationManager
+    private val appNotificationManager: AppNotificationManager,
+    private val authPrefs: AuthPreferencesDataStore
 ) : NotificationRepository {
 
     private val _notifications = MutableStateFlow<List<NotificationItem>>(emptyList())
@@ -29,34 +32,37 @@ class NotificationRepositoryImpl @Inject constructor(
 
     override suspend fun fetchNotifications(limit: Int, offset: Int): Result<List<NotificationItem>> =
         runCatching {
+            val userId = resolveUserId() ?: return@runCatching emptyList()
+
             val items = notificationApi.getNotifications(limit, offset)
                 .notifications
                 ?.map { it.toDomain() }
                 ?: emptyList()
 
-            // 1. Insert new rows only (IGNORE preserves isDisplayed for existing entries).
-            notificationDao.insertAll(items.map { it.toEntity() })
+            // 1. Insert rows owned by this user (IGNORE preserves isDisplayed for existing entries).
+            notificationDao.insertAll(items.map { it.toEntity(userId) })
 
             // 2. Sync server-authoritative read state for every returned row.
             items.forEach { notificationDao.updateReadState(it.id, it.isRead) }
 
-            // 3. Post a system notification for every entry not yet displayed.
-            //    This is the infinite-loop guard: once displayed it is never shown again.
-            val undisplayed = notificationDao.getUndisplayed()
+            // 3. Show a system notification for entries this user has never seen before.
+            val undisplayed = notificationDao.getUndisplayedForUser(userId)
             undisplayed.forEach { entity ->
                 appNotificationManager.show(entity.id, entity.title, entity.message)
                 notificationDao.markDisplayed(entity.id)
-                Timber.tag(TAG).i("System notification shown: id=${entity.id}, title=${entity.title}")
+                Timber.tag(TAG).i(
+                    "NOTIFICATION OWNER=$userId | system notification shown: id=${entity.id}"
+                )
             }
 
-            // 4. Emit the fresh list (now from DB so isDisplayed state is authoritative).
-            val merged = notificationDao.getAll().map { it.toDomain() }
+            // 4. Emit only this user's notifications (never another user's rows).
+            val merged = notificationDao.getAllForUser(userId).map { it.toDomain() }
             _notifications.value = merged
+            Timber.tag(TAG).d("SESSION USER=$userId | loaded ${merged.size} notifications")
             merged
         }.onFailure { Timber.tag(TAG).e(it, "fetchNotifications failed") }
 
     override suspend fun markAsRead(notificationId: Int): Result<Unit> {
-        // Guard: skip if already read to avoid duplicate API calls.
         val current = _notifications.value.find { it.id == notificationId }
         if (current?.isRead == true) {
             Timber.tag(TAG).d("Notification $notificationId already read — skipping")
@@ -64,7 +70,6 @@ class NotificationRepositoryImpl @Inject constructor(
         }
 
         val snapshot = _notifications.value
-        // Optimistic update so both screens reflect the change immediately.
         _notifications.update { list ->
             list.map { if (it.id == notificationId) it.copy(isRead = true) else it }
         }
@@ -88,13 +93,28 @@ class NotificationRepositoryImpl @Inject constructor(
     override fun getUnreadCount(notifications: List<NotificationItem>): Int =
         notifications.count { !it.isRead }
 
-    private fun NotificationItem.toEntity() = NotificationEntity(
+    /** Wipes the in-memory list on logout so User A's notifications are never shown to User B. */
+    override fun clearCache() {
+        _notifications.value = emptyList()
+        Timber.tag(TAG).i("Notification cache cleared (session logout)")
+    }
+
+    private suspend fun resolveUserId(): String? {
+        val userId = authPrefs.cachedUser.firstOrNull()?.id
+        if (userId.isNullOrBlank()) {
+            Timber.tag(TAG).w("No authenticated user — skipping notification fetch")
+        }
+        return userId?.takeIf { it.isNotBlank() }
+    }
+
+    private fun NotificationItem.toEntity(userId: String) = NotificationEntity(
         id = id,
+        userId = userId,
         title = title,
         message = message,
         type = type,
         isRead = isRead,
-        isDisplayed = false,   // default; IGNORE conflict preserves existing isDisplayed = true
+        isDisplayed = false,
         createdAt = createdAt
     )
 

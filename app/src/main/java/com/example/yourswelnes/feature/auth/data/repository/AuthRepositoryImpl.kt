@@ -23,11 +23,14 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun isLoggedIn(): Boolean = authPreferences.isLoggedIn()
 
     override suspend fun login(phone: String, password: String): Result<AuthUser> = runCatching {
+        val deviceToken = PLACEHOLDER_DEVICE_TOKEN
+        Timber.d("Login using placeholder token: $deviceToken")
+
         val response = authApi.login(
             LoginRequestDto(
                 phone = phone,
                 password = password,
-                deviceToken = PLACEHOLDER_DEVICE_TOKEN
+                deviceToken = deviceToken
             )
         )
 
