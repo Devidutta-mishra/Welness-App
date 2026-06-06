@@ -2,15 +2,15 @@ package com.example.yourswelnes.di
 
 import android.content.Context
 import androidx.room.Room
-import com.example.yourswelnes.data.local.room.AppDatabase
-import com.example.yourswelnes.data.local.room.MIGRATION_1_2
-import com.example.yourswelnes.data.local.room.MIGRATION_2_3
-import com.example.yourswelnes.data.local.room.MIGRATION_3_4
-import com.example.yourswelnes.data.local.room.MIGRATION_4_5
-import com.example.yourswelnes.data.local.room.MIGRATION_5_6
-import com.example.yourswelnes.data.local.room.dao.AppMonitoringDao
-import com.example.yourswelnes.data.local.room.dao.LocationDao
-import com.example.yourswelnes.data.local.room.dao.NotificationDao
+import com.example.yourswelnes.core.database.AppDatabase
+import com.example.yourswelnes.core.database.MIGRATION_1_2
+import com.example.yourswelnes.core.database.MIGRATION_2_3
+import com.example.yourswelnes.core.database.MIGRATION_3_4
+import com.example.yourswelnes.core.database.MIGRATION_4_5
+import com.example.yourswelnes.core.database.MIGRATION_5_6
+import com.example.yourswelnes.core.database.dao.AppMonitoringDao
+import com.example.yourswelnes.core.database.dao.LocationDao
+import com.example.yourswelnes.core.database.dao.NotificationDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

@@ -23,7 +23,7 @@ class AppNotificationManager @Inject constructor(
         val channel = NotificationChannel(
             CHANNEL_ID,
             "App Notifications",
-            NotificationManager.IMPORTANCE_DEFAULT
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Alerts and announcements from the server"
         }
@@ -31,19 +31,22 @@ class AppNotificationManager @Inject constructor(
     }
 
     /**
-     * Posts a system-tray notification for the given notification item. Tapping it opens
-     * MainActivity with [ACTION_OPEN_NOTIFICATIONS] so the app navigates to the list and
-     * immediately marks the notification read.
+     * Posts a system-tray notification. Tapping it opens MainActivity with
+     * [ACTION_OPEN_NOTIFICATIONS] so the app navigates to the list.
+     *
+     * @param trayId      Android notification id used for [NotificationManagerCompat.notify].
+     * @param deepLinkId  Backend notification_id to mark read on tap, or null when the push
+     *                    carried no id (tap just opens the list; -1 sentinel passed downstream).
      */
-    fun show(notificationId: Int, title: String, message: String) {
+    fun show(trayId: Int, title: String, message: String, deepLinkId: Int? = null) {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             action = ACTION_OPEN_NOTIFICATIONS
-            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(EXTRA_NOTIFICATION_ID, deepLinkId ?: -1)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            notificationId,
+            trayId,
             tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -52,22 +55,22 @@ class AppNotificationManager @Inject constructor(
             .setContentTitle(title)
             .setContentText(message)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setDefaults(NotificationCompat.DEFAULT_SOUND)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
 
         try {
-            notificationManager.notify(notificationId, notification)
-            Timber.tag(TAG).d("System notification posted: id=$notificationId, title=$title")
+            notificationManager.notify(trayId, notification)
+            Timber.tag(TAG).d("System notification posted: trayId=$trayId, title=$title")
         } catch (_: SecurityException) {
-            Timber.tag(TAG).w("POST_NOTIFICATIONS permission not granted — skipping system notification id=$notificationId")
+            Timber.tag(TAG).w("POST_NOTIFICATIONS permission not granted — skipping system notification trayId=$trayId")
         }
     }
 
     companion object {
-        const val CHANNEL_ID = "app_notifications"
+        const val CHANNEL_ID = "yw_notifications"
         const val ACTION_OPEN_NOTIFICATIONS = "com.example.yourswelnes.OPEN_NOTIFICATIONS"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val TAG = "AppNotificationManager"

@@ -10,7 +10,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.yourswelnes.feature.location.data.repository.LocationConfigRepository
+import com.example.yourswelnes.feature.location.data.LocationConfigRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -29,11 +29,11 @@ class ScheduleSyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Timber.tag(TAG).d("Schedule sync worker started")
-        // Logging and caching are handled inside getLocationConfig().
-        // This worker always returns success so WorkManager does not apply backoff
-        // unnecessarily — the next periodic run will retry automatically.
+        Timber.tag(TAG).i("WORKER STARTED | ScheduleSyncWorker — fetching latest tracking schedule")
         locationConfigRepository.getLocationConfig()
+        Timber.tag(TAG).i("WORKER EXECUTED | ScheduleSyncWorker — schedule sync complete")
+        // Always returns success so WorkManager does not apply backoff unnecessarily —
+        // the next periodic run will retry. Logging / caching done inside getLocationConfig().
         return Result.success()
     }
 
