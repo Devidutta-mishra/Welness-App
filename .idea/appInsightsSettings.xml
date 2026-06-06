@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.example.yourswelnes" />
-                  <option name="mobileSdkAppId" value="1:1234567890:android:abcdef123456" />
-                  <option name="projectId" value="yourswelnes-dummy" />
-                  <option name="projectNumber" value="1234567890" />
+                  <option name="appId" value="com.yourwelnes.yourswelnes" />
+                  <option name="mobileSdkAppId" value="1:685379689518:android:3be83005e02559380053bf" />
+                  <option name="projectId" value="wellness-e4ba8" />
+                  <option name="projectNumber" value="685379689518" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

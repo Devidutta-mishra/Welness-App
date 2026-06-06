@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -40,15 +41,31 @@
         </activity>
 
         <service
-            android:name=".core.location.LocationForegroundService"
+            android:name=".core.service.LocationForegroundService"
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Tell FCM SDK which channel to use for system-tray notifications when the app is
+             in background or killed. Without this, FCM creates a "Miscellaneous" channel
+             with IMPORTANCE_DEFAULT — no heads-up, no sound. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="yw_notifications" />
+
+        <service
+            android:name=".core.notification.YwFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
-            android:name=".core.location.BootReceiver"
+            android:name=".core.receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

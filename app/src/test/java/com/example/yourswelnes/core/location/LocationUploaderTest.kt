@@ -2,14 +2,14 @@ package com.example.yourswelnes.core.location
 
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
-import com.example.yourswelnes.feature.auth.domain.model.AuthUser
-import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationConfigDto
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationItemDto
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRequestDto
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadResponseDto
-import com.example.yourswelnes.feature.location.data.repository.LocationRepository
-import com.example.yourswelnes.feature.location.domain.model.LocationRecord
+import com.example.yourswelnes.feature.auth.model.AuthUser
+import com.example.yourswelnes.feature.location.data.api.LocationApi
+import com.example.yourswelnes.feature.location.data.dto.LocationConfigDto
+import com.example.yourswelnes.feature.location.data.dto.LocationItemDto
+import com.example.yourswelnes.feature.location.data.dto.LocationUploadRequestDto
+import com.example.yourswelnes.feature.location.data.dto.LocationUploadResponseDto
+import com.example.yourswelnes.feature.location.data.LocationRepository
+import com.example.yourswelnes.feature.location.model.LocationRecord
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk

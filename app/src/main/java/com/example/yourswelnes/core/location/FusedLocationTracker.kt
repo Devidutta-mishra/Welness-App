@@ -24,7 +24,7 @@ class FusedLocationTracker @Inject constructor(
     @SuppressLint("MissingPermission")
     override suspend fun getCurrentLocation(): Location? {
         if (!hasLocationPermission()) {
-            Timber.w("Location permission not granted — skipping GPS read")
+            Timber.w("PERMISSION DENIED | Location permission not granted — skipping GPS read")
             return null
         }
         return suspendCancellableCoroutine { cont ->

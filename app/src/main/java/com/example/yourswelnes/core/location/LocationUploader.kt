@@ -2,11 +2,11 @@ package com.example.yourswelnes.core.location
 
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
-import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationItemDto
-import com.example.yourswelnes.feature.location.data.remote.dto.LocationUploadRequestDto
-import com.example.yourswelnes.feature.location.data.repository.LocationRepository
-import com.example.yourswelnes.feature.location.domain.model.LocationRecord
+import com.example.yourswelnes.feature.location.data.api.LocationApi
+import com.example.yourswelnes.feature.location.data.dto.LocationItemDto
+import com.example.yourswelnes.feature.location.data.dto.LocationUploadRequestDto
+import com.example.yourswelnes.feature.location.data.LocationRepository
+import com.example.yourswelnes.feature.location.model.LocationRecord
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -55,12 +55,13 @@ class LocationUploader @Inject constructor(
      * reports [Result.FAILED] so the caller can retry; already-confirmed batches are not re-sent.
      */
     suspend fun uploadPending(): Result = uploadLock.mutex.withLock {
+        Timber.tag(TAG).i("UPLOAD STARTED | draining pending location rows")
         val userId = authPrefs.cachedUser.firstOrNull()?.id ?: run {
-            Timber.tag(TAG).w("No cached user — cannot upload, skipping")
+            Timber.tag(TAG).w("UPLOAD STARTED | skipped — no cached user")
             return@withLock Result.NOTHING_TO_DO
         }
         val clubId = locationPrefs.getClubId() ?: run {
-            Timber.tag(TAG).w("Club ID not in DataStore — cannot upload, skipping")
+            Timber.tag(TAG).w("UPLOAD STARTED | skipped — club ID not in DataStore (club fetch may be pending)")
             return@withLock Result.NOTHING_TO_DO
         }
 
@@ -84,27 +85,31 @@ class LocationUploader @Inject constructor(
             val ids = batch.map { it.id }
             Timber.tag(TAG).i(
                 "UPLOAD BATCH | userId=$userId | count=${batch.size} | ids=$ids | " +
-                    "range=${batch.first().formattedTime()} -> ${batch.last().formattedTime()}"
+                    "collectedRange=${batch.first().formattedCollectionTime()} -> ${batch.last().formattedCollectionTime()}"
             )
+
+            val uploadTime = System.currentTimeMillis().toFormattedTime()
 
             val payload = LocationUploadRequestDto(
                 locations = batch.map { record ->
-                    // record.timestamp is the original collection instant; transmit it as-is.
-                    val storedTime = record.formattedTime()
-                    Timber.tag(TAG).d("LOCATION UPLOAD | id=${record.id} | storedTime=$storedTime")
+                    val collectionTime = record.formattedCollectionTime()
+                    Timber.tag(TAG).d(
+                        "LOCATION UPLOAD | id=${record.id} " +
+                        "| collectedAt=$collectionTime | uploadedAt=$uploadTime"
+                    )
                     LocationItemDto(
                         userId = userId,
                         latitude = record.latitude,
                         longitude = record.longitude,
                         clubId = clubId,
                         distance = record.distance.toInt(),
-                        time = storedTime
+                        time = collectionTime
                     )
                 }
             )
 
             val response = runCatching { locationApi.storeLocations(payload) }.getOrElse { e ->
-                Timber.tag(TAG).e(e, "Upload FAILED (network/server error) — will retry")
+                Timber.tag(TAG).e(e, "NO INTERNET | Upload FAILED (network/server error) — will retry on next tick")
                 failed = true
                 null
             }
@@ -133,7 +138,13 @@ class LocationUploader @Inject constructor(
         }
     }
 
-    private fun LocationRecord.formattedTime(): String =
+    /** Formats the GPS collection instant stored in [LocationRecord.timestamp]. */
+    private fun LocationRecord.formattedCollectionTime(): String =
         LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
+            .format(TIMESTAMP_FORMATTER)
+
+    /** Formats any epoch-millisecond value (used for upload time). */
+    private fun Long.toFormattedTime(): String =
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(this), ZoneId.systemDefault())
             .format(TIMESTAMP_FORMATTER)
 }

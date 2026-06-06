@@ -2,13 +2,13 @@ package com.example.yourswelnes.di
 
 import com.example.yourswelnes.BuildConfig
 import com.example.yourswelnes.core.network.AuthInterceptor
-import com.example.yourswelnes.feature.monitoring.data.remote.api.AppMonitoringApi
-import com.example.yourswelnes.feature.auth.data.remote.api.AuthApi
-import com.example.yourswelnes.feature.dashboard.data.remote.api.DashboardApi
-import com.example.yourswelnes.feature.home.data.remote.api.ClubApi
-import com.example.yourswelnes.feature.home.data.remote.api.GroupDetailsApi
-import com.example.yourswelnes.feature.location.data.remote.api.LocationApi
-import com.example.yourswelnes.feature.notifications.data.remote.api.NotificationApi
+import com.example.yourswelnes.feature.monitoring.data.api.AppMonitoringApi
+import com.example.yourswelnes.feature.auth.data.api.AuthApi
+import com.example.yourswelnes.feature.dashboard.data.api.DashboardApi
+import com.example.yourswelnes.feature.home.data.api.ClubApi
+import com.example.yourswelnes.feature.home.data.api.GroupDetailsApi
+import com.example.yourswelnes.feature.location.data.api.LocationApi
+import com.example.yourswelnes.feature.notifications.data.api.NotificationApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

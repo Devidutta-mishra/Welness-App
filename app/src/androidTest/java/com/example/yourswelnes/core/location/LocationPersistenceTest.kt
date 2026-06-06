@@ -4,10 +4,10 @@ import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.example.yourswelnes.data.local.room.AppDatabase
-import com.example.yourswelnes.data.local.room.MIGRATION_3_4
-import com.example.yourswelnes.feature.location.data.repository.LocationRepositoryImpl
-import com.example.yourswelnes.feature.location.domain.model.LocationRecord
+import com.example.yourswelnes.core.database.AppDatabase
+import com.example.yourswelnes.core.database.MIGRATION_3_4
+import com.example.yourswelnes.feature.location.data.LocationRepositoryImpl
+import com.example.yourswelnes.feature.location.model.LocationRecord
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

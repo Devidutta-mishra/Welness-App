@@ -1,0 +1,194 @@
+package com.example.yourswelnes.feature.home.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import android.content.Context
+import androidx.work.WorkManager
+import com.example.yourswelnes.core.service.LocationForegroundService
+import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
+import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.NotificationSyncWorker
+import com.example.yourswelnes.core.worker.ScheduleSyncWorker
+import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.feature.auth.data.AuthRepository
+import com.example.yourswelnes.feature.biometric.security.AppLockManager
+import com.example.yourswelnes.feature.dashboard.data.DashboardRepository
+import com.example.yourswelnes.feature.home.data.ClubRepository
+import com.example.yourswelnes.feature.home.data.GroupDetailsRepository
+import com.example.yourswelnes.feature.location.data.LocationConfigRepository
+import com.example.yourswelnes.feature.notifications.data.NotificationRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val authRepository: AuthRepository,
+    private val clubRepository: ClubRepository,
+    private val notificationRepository: NotificationRepository,
+    private val dashboardRepository: DashboardRepository,
+    private val appLockManager: AppLockManager,
+    private val locationConfigRepository: LocationConfigRepository,
+    private val groupDetailsRepository: GroupDetailsRepository,
+    private val locationPrefs: LocationPreferencesDataStore
+) : ViewModel() {
+
+    val isLockRequired: StateFlow<Boolean> = appLockManager.isLockRequired
+
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val navigationEvents = Channel<HomeNavigationEvent>(Channel.BUFFERED)
+    val navigationEvent = navigationEvents.receiveAsFlow()
+
+    init {
+        observeUser()
+        loadClubDetails()
+        fetchLocationConfig()
+        observeNotifications()
+        rescheduleWorkers()
+    }
+
+    private fun rescheduleWorkers() {
+        val workManager = WorkManager.getInstance(context)
+        LocationUploadWorker.schedule(workManager)
+        ScheduleSyncWorker.schedule(workManager)
+        NotificationSyncWorker.cancel(workManager)  // FCM handles delivery — cancel any stale polling work
+        AppInstallationSyncWorker.schedulePeriodic(workManager)
+        // No need to scheduleOneTime for AppInstallation here as it's intended for app start
+    }
+
+    private fun observeUser() {
+        viewModelScope.launch {
+            authRepository.currentUser.collect { user ->
+                if (user != null) {
+                    _uiState.update {
+                        it.copy(
+                            userName = user.name,
+                            profileImageUrl = user.profileImage ?: user.imageUrl
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun fetchLocationConfig() {
+        viewModelScope.launch {
+            locationConfigRepository.getLocationConfig()
+                .onSuccess { config ->
+                    Timber.tag("HomeViewModel").d(
+                        "Location config fetched — window: ${config.trackingStartTime}–${config.trackingEndTime}, " +
+                        "interval: ${config.trackingIntervalSeconds}s, upload: ${config.uploadIntervalMinutes}min"
+                    )
+                }
+                .onFailure {
+                    Timber.tag("HomeViewModel").w("Location config fetch failed (cached will be used): ${it.message}")
+                }
+        }
+    }
+
+    private fun loadClubDetails() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            // Do NOT clear club info here. Logout already calls clearClubInfo() so there is
+            // no cross-user contamination. Pre-clearing caused a critical bug: if the network
+            // request failed (offline, flaky connection) club info stayed empty, and the
+            // running service silently skipped every location collection for the entire session.
+            // ClubRepositoryImpl handles clearing when the server rejects the club (no club
+            // assigned) and saving on success; on network failure the cached info is preserved.
+            clubRepository.getClubDetails()
+                .onSuccess { details ->
+                    _uiState.update { it.copy(isLoading = false, clubName = details.clubName) }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            clubName = "Zoom Club",
+                            error = error.message
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun observeNotifications() {
+        viewModelScope.launch {
+            notificationRepository.notifications.collect { notifications ->
+                val hasUnread = notificationRepository.getUnreadCount(notifications) > 0
+                _uiState.update { it.copy(hasUnreadNotifications = hasUnread) }
+            }
+        }
+    }
+
+    fun openDashboard() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDashboardLoading = true, dashboardError = null) }
+            dashboardRepository.getDashboardUrl()
+                .onSuccess { url ->
+                    _uiState.update { it.copy(isDashboardLoading = false) }
+                    navigationEvents.send(HomeNavigationEvent.OpenDashboard(url))
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isDashboardLoading = false,
+                            dashboardError = error.message ?: "Unable to open dashboard. Please try again."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun onLogoutClicked() {
+        _uiState.update { it.copy(showLogoutDialog = true) }
+    }
+
+    fun onLogoutConfirmed() {
+        _uiState.update { it.copy(showLogoutDialog = false) }
+        viewModelScope.launch {
+            Timber.tag("HomeViewModel").d("Logout — beginning full session cleanup")
+            val workManager = WorkManager.getInstance(context)
+
+            // 1. Stop location service so it doesn't collect/upload under the leaving user.
+            context.stopService(LocationForegroundService.stopIntent(context))
+
+            // 2. Cancel all user-bound workers. They will be rescheduled when User B logs in
+            //    and the app starts fresh (YourswelnesApplication.onCreate re-enqueues them).
+            LocationUploadWorker.cancel(workManager)
+            ScheduleSyncWorker.cancel(workManager)
+            NotificationSyncWorker.cancel(workManager)
+            AppInstallationSyncWorker.cancel(workManager)
+
+            // 3. Clear all in-memory and persisted caches scoped to the leaving user.
+            groupDetailsRepository.clearCache()
+            notificationRepository.clearCache()
+            locationPrefs.clearClubInfo()  // prevents stale club info being used by next user's service
+
+            // 4. Wipe the auth session — this revokes the bearer token for all future requests.
+            authRepository.logout()
+
+            Timber.tag("HomeViewModel").d("Session cleanup complete — navigating to login")
+            navigationEvents.send(HomeNavigationEvent.NavigateToLogin)
+        }
+    }
+
+    fun onLogoutDismissed() {
+        _uiState.update { it.copy(showLogoutDialog = false) }
+    }
+}
+
+sealed interface HomeNavigationEvent {
+    data object NavigateToLogin : HomeNavigationEvent
+    data class OpenDashboard(val url: String) : HomeNavigationEvent
+}

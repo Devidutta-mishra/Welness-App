@@ -6,7 +6,9 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -24,7 +26,7 @@ class LocationUploadWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Timber.tag(TAG).d("doWork started — draining pending locations")
+        Timber.tag(TAG).i("UPLOAD STARTED | LocationUploadWorker doWork — draining pending locations")
         return when (locationUploader.uploadPending()) {
             LocationUploader.Result.SUCCESS,
             LocationUploader.Result.NOTHING_TO_DO -> Result.success()
@@ -59,6 +61,27 @@ class LocationUploadWorker @AssistedInject constructor(
                 request
             )
             Timber.tag(TAG).d("Scheduled periodic upload worker (15 min interval, network required)")
+        }
+
+        /**
+         * Enqueues a one-time upload that runs as soon as network is available. Use on boot,
+         * app restart, and service start so pending records are drained promptly rather than
+         * waiting for the next 15-min periodic tick.
+         */
+        fun scheduleOneTime(workManager: WorkManager) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+            val request = OneTimeWorkRequestBuilder<LocationUploadWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+                .build()
+            workManager.enqueueUniqueWork(
+                "${WORK_NAME}_immediate",
+                ExistingWorkPolicy.KEEP,
+                request
+            )
+            Timber.tag(TAG).d("Scheduled one-time upload worker (fires when network available)")
         }
     }
 }
