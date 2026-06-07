@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.work.WorkManager
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.LocationWatchdogWorker
 import com.example.yourswelnes.core.worker.NotificationSyncWorker
 import com.example.yourswelnes.core.worker.ScheduleSyncWorker
 import timber.log.Timber
@@ -44,6 +45,9 @@ class BootReceiver : BroadcastReceiver() {
         // rather than waiting for the next 15-min periodic tick.
         LocationUploadWorker.scheduleOneTime(workManager)
         ScheduleSyncWorker.schedule(workManager)
+        // Watchdog: restarts the service if OEM kills it while the tracking window is active.
+        // No network constraint so it fires even when internet is unavailable.
+        LocationWatchdogWorker.schedule(workManager)
         // FCM handles notification delivery — cancel any stale polling worker that may
         // have been re-enqueued by a previous app version.
         NotificationSyncWorker.cancel(workManager)

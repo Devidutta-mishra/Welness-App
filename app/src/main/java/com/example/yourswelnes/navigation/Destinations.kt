@@ -12,6 +12,7 @@ object Destinations {
     fun requirements(nextDest: String) = "requirements/$nextDest"
 
     const val LOCATION_PERMISSION = "location_permission"
+    const val TRACKING_SETUP = "tracking_setup"
     const val NOTIFICATIONS = "notifications"
 
     const val ARG_GROUP_ID = "groupId"

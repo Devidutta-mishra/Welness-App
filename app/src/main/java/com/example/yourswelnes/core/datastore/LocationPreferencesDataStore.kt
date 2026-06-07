@@ -92,6 +92,27 @@ class LocationPreferencesDataStore @Inject constructor(
     suspend fun getLastScheduleSyncTime(): Long? =
         dataStore.data.firstOrNull()?.get(KEY_LAST_SCHEDULE_SYNC_TIME)
 
+    // --- Tracking health timestamps ---
+
+    /** Updated by LocationForegroundService every time a GPS point is saved locally. */
+    suspend fun saveLastLocationCollectionTime(timestamp: Long) {
+        dataStore.edit { prefs -> prefs[KEY_LAST_LOCATION_COLLECTION_TIME] = timestamp }
+    }
+
+    suspend fun getLastLocationCollectionTime(): Long? =
+        dataStore.data.firstOrNull()?.get(KEY_LAST_LOCATION_COLLECTION_TIME)
+
+    /** Updated by LocationWatchdogWorker on every execution. */
+    suspend fun saveLastWorkerExecutionTime(timestamp: Long) {
+        dataStore.edit { prefs -> prefs[KEY_LAST_WORKER_EXECUTION_TIME] = timestamp }
+    }
+
+    suspend fun getLastWorkerExecutionTime(): Long? =
+        dataStore.data.firstOrNull()?.get(KEY_LAST_WORKER_EXECUTION_TIME)
+
+    val lastLocationCollectionTime = dataStore.data.map { it[KEY_LAST_LOCATION_COLLECTION_TIME] }
+    val lastWorkerExecutionTime    = dataStore.data.map { it[KEY_LAST_WORKER_EXECUTION_TIME] }
+
     private companion object {
         const val DEFAULT_UPLOAD_INTERVAL_MINUTES = 2
 
@@ -105,5 +126,7 @@ class LocationPreferencesDataStore @Inject constructor(
         val KEY_CLUB_NAME = stringPreferencesKey("club_name")
         val KEY_LAST_SYNC_TIME = longPreferencesKey("last_sync_time")
         val KEY_LAST_SCHEDULE_SYNC_TIME = longPreferencesKey("last_schedule_sync_time")
+        val KEY_LAST_LOCATION_COLLECTION_TIME = longPreferencesKey("last_location_collection_time")
+        val KEY_LAST_WORKER_EXECUTION_TIME = longPreferencesKey("last_worker_execution_time")
     }
 }

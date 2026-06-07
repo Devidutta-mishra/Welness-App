@@ -32,7 +32,6 @@ import com.example.yourswelnes.feature.camera.ui.CameraScreen
 import com.example.yourswelnes.feature.home.ui.HomeNavigationEvent
 import com.example.yourswelnes.feature.home.ui.HomeScreen
 import com.example.yourswelnes.feature.home.ui.HomeViewModel
-import com.example.yourswelnes.feature.location.ui.LocationPermissionScreen
 import com.example.yourswelnes.feature.location.ui.LocationStatusViewModel
 import com.example.yourswelnes.feature.notifications.ui.NotificationScreen
 import com.example.yourswelnes.feature.onboarding.ui.RequirementsScreen
@@ -41,6 +40,8 @@ import com.example.yourswelnes.feature.onboarding.ui.SplashNavigationEvent
 import com.example.yourswelnes.feature.onboarding.ui.SplashScreen
 import com.example.yourswelnes.feature.onboarding.ui.SplashViewModel
 import com.example.yourswelnes.feature.onboarding.ui.WelcomeLandingScreen
+import com.example.yourswelnes.feature.tracking.ui.PermissionWizardScreen
+import com.example.yourswelnes.feature.tracking.ui.TrackingSetupScreen
 
 @Composable
 fun AppNavGraph(navController: NavHostController) {
@@ -167,6 +168,10 @@ fun AppNavGraph(navController: NavHostController) {
                     if (event == Lifecycle.Event.ON_RESUME) {
                         requirementsViewModel.recheckFromBackground()
                         locationStatusViewModel.refreshPermissions()
+                        // Re-evaluate tracking health (collection / worker staleness) so the
+                        // "Tracking Needs Attention" card appears or clears when the user
+                        // returns from OEM settings or after a period in the background.
+                        viewModel.recheckTrackingHealth()
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
@@ -185,14 +190,27 @@ fun AppNavGraph(navController: NavHostController) {
                 }
             }
 
-            // Navigate to the permission gate whenever any runtime permission is missing or
-            // battery optimization is enabled. Fires on every resume via the DisposableEffect
+            // Navigate to the mandatory permission wizard whenever ANY of the four mandatory
+            // requirements is missing: fine location, background location, notifications, or
+            // battery optimization exemption. Fires on every resume via the DisposableEffect
             // above so the check is never skipped — even if the user revokes a permission
-            // mid-session or returns from another app without granting battery exemption.
-            LaunchedEffect(locationState.anyPermissionMissing) {
-                if (locationState.anyPermissionMissing) {
-                    navController.navigate(Destinations.LOCATION_PERMISSION) {
-                        launchSingleTop = true
+            // mid-session or disables battery exemption from system settings. This enforces
+            // the "Home is blocked until mandatory requirements are met" rule on every resume.
+            //
+            // IMPORTANT — re-verify against LIVE state before navigating. When the wizard pops
+            // back to HOME, this composable re-composes while LocationStatusViewModel still
+            // holds its pre-wizard state (anyRequirementMissing = true), because the async
+            // refreshPermissions() has not completed yet. Without the re-check below, that stale
+            // value would immediately relaunch the wizard for a redundant OEM-only pass. We call
+            // the synchronous refreshPermissions() and re-read uiState.value so we only navigate
+            // when the requirement is GENUINELY still missing.
+            LaunchedEffect(locationState.anyRequirementMissing) {
+                if (locationState.anyRequirementMissing) {
+                    locationStatusViewModel.refreshPermissions()
+                    if (locationStatusViewModel.uiState.value.anyRequirementMissing) {
+                        navController.navigate(Destinations.LOCATION_PERMISSION) {
+                            launchSingleTop = true
+                        }
                     }
                 }
             }
@@ -252,7 +270,8 @@ fun AppNavGraph(navController: NavHostController) {
                 onCameraWithGroup = { groupId -> navController.navigate(Destinations.camera(groupId)) },
                 onNotificationsClick = { navController.navigate(Destinations.NOTIFICATIONS) },
                 onLogoutClick = viewModel::onLogoutClicked,
-                onDashboardClick = viewModel::openDashboard
+                onDashboardClick = viewModel::openDashboard,
+                onTrackingSetupClick = { navController.navigate(Destinations.TRACKING_SETUP) }
             )
         }
 
@@ -274,8 +293,26 @@ fun AppNavGraph(navController: NavHostController) {
         }
 
         composable(Destinations.LOCATION_PERMISSION) {
-            LocationPermissionScreen(
-                onPermissionsGranted = { navController.popBackStack() }
+            PermissionWizardScreen(
+                onDone = {
+                    // If HOME is already in the back stack (mid-session permission revoke),
+                    // pop back to it without recreating it.  If HOME is not in the stack
+                    // (post-login first-time setup), navigate fresh and clear everything.
+                    val popped = navController.popBackStack(Destinations.HOME, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(Destinations.HOME) {
+                            popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            )
+        }
+
+        composable(Destinations.TRACKING_SETUP) {
+            TrackingSetupScreen(
+                onDone = { navController.popBackStack() },
+                blockBackNavigation = false
             )
         }
 

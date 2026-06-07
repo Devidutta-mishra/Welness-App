@@ -7,6 +7,7 @@ import androidx.work.WorkManager
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.LocationWatchdogWorker
 import com.example.yourswelnes.core.worker.NotificationSyncWorker
 import com.example.yourswelnes.core.worker.ScheduleSyncWorker
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
@@ -56,12 +57,14 @@ class HomeViewModel @Inject constructor(
         fetchLocationConfig()
         observeNotifications()
         rescheduleWorkers()
+        checkTrackingHealth()
     }
 
     private fun rescheduleWorkers() {
         val workManager = WorkManager.getInstance(context)
         LocationUploadWorker.schedule(workManager)
         ScheduleSyncWorker.schedule(workManager)
+        LocationWatchdogWorker.schedule(workManager)
         NotificationSyncWorker.cancel(workManager)  // FCM handles delivery — cancel any stale polling work
         AppInstallationSyncWorker.schedulePeriodic(workManager)
         // No need to scheduleOneTime for AppInstallation here as it's intended for app start
@@ -79,6 +82,54 @@ class HomeViewModel @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    fun recheckTrackingHealth() { checkTrackingHealth() }
+
+    /**
+     * Background-tracking health monitor.
+     *
+     * Battery optimization and the four runtime permissions are VERIFIABLE, so they are
+     * enforced as a hard gate by the permission wizard (AppNavGraph redirects to it whenever
+     * LocationUiState.anyRequirementMissing is true). They are intentionally NOT checked here.
+     *
+     * This monitor instead detects the failures Android CANNOT surface directly — the symptoms
+     * of an OEM aggressively killing background work despite every permission being granted:
+     *
+     *   • Collection stale: locations have been collected before, but not within the last 24h.
+     *     Over a full day at least one tracking window must elapse, so a gap this long means
+     *     collection is silently failing — almost always an OEM background kill or a missing
+     *     auto-start / background-activity allowance that no API can verify.
+     *
+     *   • Worker stale: the watchdog runs every 15 min with NO network constraint and stamps
+     *     [LocationPreferencesDataStore.saveLastWorkerExecutionTime] on every run. If it has
+     *     not executed in [WORKER_STALE_THRESHOLD_MS], WorkManager itself is being killed —
+     *     the strongest possible signal that background execution is blocked.
+     *
+     * Both conditions require a non-null history value, so a fresh login (which has never
+     * collected or run a worker) never produces a false alarm. When unhealthy, Home shows the
+     * "Tracking Needs Attention" card whose [Fix Tracking] action re-opens the OEM setup.
+     */
+    private fun checkTrackingHealth() {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val lastCollection = locationPrefs.getLastLocationCollectionTime()
+            val lastWorker = locationPrefs.getLastWorkerExecutionTime()
+
+            val collectionStale = lastCollection != null &&
+                (now - lastCollection) > COLLECTION_STALE_THRESHOLD_MS
+            val workerStale = lastWorker != null &&
+                (now - lastWorker) > WORKER_STALE_THRESHOLD_MS
+
+            val needsAttention = collectionStale || workerStale
+
+            Timber.tag("HomeViewModel").d(
+                "TRACKING HEALTH ${if (needsAttention) "UNHEALTHY" else "HEALTHY"} | " +
+                "collectionStale=$collectionStale workerStale=$workerStale " +
+                "lastCollection=$lastCollection lastWorker=$lastWorker"
+            )
+            _uiState.update { it.copy(trackingHealthNeedsAttention = needsAttention) }
         }
     }
 
@@ -108,13 +159,18 @@ class HomeViewModel @Inject constructor(
             // assigned) and saving on success; on network failure the cached info is preserved.
             clubRepository.getClubDetails()
                 .onSuccess { details ->
+                    // Covers both online (fresh) and offline (cached) — the repository returns
+                    // the cached club on network failure, so the real club name is never lost.
                     _uiState.update { it.copy(isLoading = false, clubName = details.clubName) }
                 }
                 .onFailure { error ->
+                    // Reached only when the server explicitly reports no club AND there is no
+                    // cached club (e.g. brand-new user offline). Do NOT fabricate a placeholder
+                    // club name — leave it blank so the UI does not show a club that isn't real.
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            clubName = "Zoom Club",
+                            clubName = "",
                             error = error.message
                         )
                     }
@@ -167,6 +223,7 @@ class HomeViewModel @Inject constructor(
             //    and the app starts fresh (YourswelnesApplication.onCreate re-enqueues them).
             LocationUploadWorker.cancel(workManager)
             ScheduleSyncWorker.cancel(workManager)
+            LocationWatchdogWorker.cancel(workManager)
             NotificationSyncWorker.cancel(workManager)
             AppInstallationSyncWorker.cancel(workManager)
 
@@ -192,3 +249,6 @@ sealed interface HomeNavigationEvent {
     data object NavigateToLogin : HomeNavigationEvent
     data class OpenDashboard(val url: String) : HomeNavigationEvent
 }
+
+private const val COLLECTION_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000L  // 24 hours (per spec)
+private const val WORKER_STALE_THRESHOLD_MS = 3 * 60 * 60 * 1000L       // 3 hours; watchdog runs every 15 min

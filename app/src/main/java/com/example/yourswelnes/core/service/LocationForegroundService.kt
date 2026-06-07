@@ -199,7 +199,7 @@ class LocationForegroundService : android.app.Service() {
                 stopSelf()
                 return@launch
             }
-            Timber.tag(TAG).i("WORKER STARTED | Auth OK — location collection pipeline starting")
+            Timber.tag(TAG).i("USER SESSION LOADED | Auth token present — location collection pipeline starting")
 
             // Warn loudly if battery optimization is still enabled. On many OEMs (Xiaomi,
             // Samsung, Realme, OPPO) this causes the service to be killed within seconds of
@@ -208,15 +208,16 @@ class LocationForegroundService : android.app.Service() {
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
                 Timber.tag(TAG).w(
                     "BATTERY OPTIMIZATION ENABLED | This device will likely kill the service " +
-                    "when the screen locks. Ask the user to disable battery optimization for this app."
+                    "when the screen locks. Battery optimization exemption required for reliable tracking."
                 )
             } else {
                 Timber.tag(TAG).i("Battery optimization exempt — locked-screen collection enabled")
             }
 
-            // Prime local cache from API before entering the collection loop so the window
-            // is always current on the first iteration, even after a reboot.
-            refreshConfigFromApi()
+            // Refresh config in the background so the collection loop starts immediately with
+            // cached values. A 30-second connect timeout would otherwise delay the first GPS
+            // request by up to 30 s when internet is unavailable.
+            serviceScope.launch { refreshConfigFromApi() }
 
             while (isActive) {
                 // Safety net: stop if token is cleared mid-session (logout).
@@ -231,13 +232,13 @@ class LocationForegroundService : android.app.Service() {
                 val endTime = locationPrefs.getTrackingEndTime() ?: "12:00"
                 val intervalMs = locationPrefs.getTrackingIntervalSeconds() * 1000L
                 val currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-                Timber.tag(TAG).d(
-                    "TRACKING WINDOW LOADED | window=$startTime–$endTime | " +
+                Timber.tag(TAG).i(
+                    "TIMING CACHE LOADED | Cached window=$startTime–$endTime | " +
                     "interval=${intervalMs / 1000}s | now=$currentTime"
                 )
 
                 if (locationScheduler.isInTrackingWindow(startTime, endTime)) {
-                    Timber.tag(TAG).d("INSIDE WINDOW | Ensuring continuous location updates are active")
+                    Timber.tag(TAG).i("TRACKING WINDOW ACTIVE | Inside window $startTime–$endTime — ensuring GPS updates")
                     startContinuousUpdates(intervalMs)
 
                     // Sleep until the window closes or until we need to re-read config —
@@ -293,11 +294,15 @@ class LocationForegroundService : android.app.Service() {
         try {
             // Deliver callbacks on the main looper. The callback immediately re-dispatches work
             // to serviceScope (Dispatchers.IO) so there is no blocking on the main thread.
+            Timber.tag(TAG).i(
+                "LOCATION REQUEST STARTED | Registering continuous GPS updates — " +
+                "interval=${intervalMs / 1000}s"
+            )
             fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
             locationUpdatesActive = true
             activeIntervalMs = intervalMs
             Timber.tag(TAG).i(
-                "WORKER REGISTERED | Continuous location updates active — " +
+                "LOCATION REQUEST STARTED | GPS updates active — " +
                 "interval=${intervalMs / 1000}s | LOCK SCREEN COLLECTION: enabled via FGS exemption"
             )
         } catch (e: SecurityException) {
@@ -341,7 +346,10 @@ class LocationForegroundService : android.app.Service() {
                     LocationUploader.Result.NOTHING_TO_DO ->
                         Timber.tag(TAG).d("Upload tick — nothing pending")
                     LocationUploader.Result.FAILED ->
-                        Timber.tag(TAG).w("NO INTERNET | Upload failed — will retry next tick")
+                        Timber.tag(TAG).w(
+                            "NO INTERNET — UPLOAD DEFERRED | " +
+                            "Pending locations remain in Room; will retry next tick"
+                        )
                 }
             }
         }
@@ -351,9 +359,8 @@ class LocationForegroundService : android.app.Service() {
         locationConfigRepository.getLocationConfig()
             .onSuccess { config ->
                 Timber.tag(TAG).i(
-                    "TRACKING WINDOW UPDATED | API success — " +
-                    "window=${config.trackingStartTime}–${config.trackingEndTime} " +
-                    "interval=${config.trackingIntervalSeconds}s upload=${config.uploadIntervalMinutes}min"
+                    "%snull", "TRACKING WINDOW UPDATED | API success — " +
+                    "window=${config.trackingStartTime}–${config.trackingEndTime} "
                 )
             }
             .onFailure { err ->
@@ -403,8 +410,9 @@ class LocationForegroundService : android.app.Service() {
                 createdAt = collectionTimeMs
             )
         )
+        locationPrefs.saveLastLocationCollectionTime(collectionTimeMs)
         Timber.tag(TAG).i(
-            "LOCATION STORED | userId=$userId | lat=${location.latitude} lon=${location.longitude} " +
+            "LOCATION SAVED LOCALLY | userId=$userId | lat=${location.latitude} lon=${location.longitude} " +
             "| distance=${distance.toInt()}m | collectedAt=$collectionTimestamp"
         )
     }
