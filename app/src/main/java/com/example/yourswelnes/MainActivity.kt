@@ -37,8 +37,9 @@ class MainActivity : AppCompatActivity() {
 
         // Request notification permission right at startup on Android 13+.
         // Without this, FCM notifications never appear on fresh installs — the permission
-        // defaults to denied and the LocationPermissionScreen only requests it after
-        // location permissions are granted (too late for many users).
+        // defaults to denied. The PermissionWizard also requests it as a mandatory step, but
+        // FCM can register before the wizard runs, so we request it here too. If already
+        // granted by the time the wizard runs, the wizard simply skips the notification step.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {

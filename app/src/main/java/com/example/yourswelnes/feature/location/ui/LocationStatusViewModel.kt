@@ -1,15 +1,11 @@
 package com.example.yourswelnes.feature.location.ui
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.PowerManager
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.permission.PermissionChecker
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.location.LocationScheduler
 import com.example.yourswelnes.core.location.LocationServiceState
@@ -26,6 +22,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class LocationStatusViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val permissionChecker: PermissionChecker,
     private val locationPrefs: LocationPreferencesDataStore,
     private val locationScheduler: LocationScheduler
 ) : ViewModel() {
@@ -39,31 +36,24 @@ class LocationStatusViewModel @Inject constructor(
         refreshPermissions()
     }
 
+    /**
+     * Re-evaluates all permission + exemption states. Called:
+     *  - On init (cold start)
+     *  - On HOME ON_RESUME (user returns from any settings screen or background)
+     *
+     * Uses [PermissionChecker] as the single source of truth — no duplicated
+     * checkSelfPermission() calls. All four checked values feed
+     * [LocationUiState.mandatoryRequirementsMet]; when any is missing the wizard redirect
+     * fires from AppNavGraph.
+     */
     fun refreshPermissions() {
-        val hasFine = ActivityCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val hasBackground = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ActivityCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_BACKGROUND_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        } else true
-
-        val hasNotification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-        } else true
-
-        // Battery optimization must be disabled for the app to ensure OEM devices (Xiaomi,
-        // Samsung, Realme, OPPO) do not kill the foreground service when the screen locks.
-        // Without this exemption, GPS collection stops within seconds of the screen turning off.
-        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val isBatteryExempt = pm.isIgnoringBatteryOptimizations(context.packageName)
+        val hasFine = permissionChecker.hasFineLocation()
+        val hasBackground = permissionChecker.hasBackgroundLocation()
+        val hasNotification = permissionChecker.hasNotifications()
+        val isBatteryExempt = permissionChecker.isBatteryOptimizationExempt()
 
         Timber.tag("LocationStatusVM").d(
-            "Permissions — fine=$hasFine background=$hasBackground " +
+            "Permissions — fine=$hasFine bg=$hasBackground " +
             "notification=$hasNotification batteryExempt=$isBatteryExempt"
         )
 

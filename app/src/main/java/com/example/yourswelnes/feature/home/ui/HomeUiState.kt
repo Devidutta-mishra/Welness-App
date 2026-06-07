@@ -15,6 +15,9 @@ data class HomeUiState(
     val isDashboardLoading: Boolean = false,
     val dashboardError: String? = null,
 
+    // Tracking health — shown as a warning card when setup is incomplete
+    val trackingHealthNeedsAttention: Boolean = false,
+
     // Future placeholders — location phase
     val locationPermissionGranted: Boolean = false,
     val lastSyncedLocation: String? = null,

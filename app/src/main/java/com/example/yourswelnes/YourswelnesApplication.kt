@@ -12,6 +12,7 @@ import com.example.yourswelnes.core.notification.AppNotificationManager
 import com.example.yourswelnes.core.notification.LocationNotificationManager
 import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
 import com.example.yourswelnes.core.worker.LocationUploadWorker
+import com.example.yourswelnes.core.worker.LocationWatchdogWorker
 import com.example.yourswelnes.core.worker.NotificationSyncWorker
 import com.example.yourswelnes.core.worker.ScheduleSyncWorker
 import com.google.firebase.messaging.FirebaseMessaging
@@ -52,6 +53,10 @@ class YourswelnesApplication : Application(), Configuration.Provider {
         // is available so users never wait a full 15-min periodic tick after offline periods.
         LocationUploadWorker.scheduleOneTime(workManager)
         ScheduleSyncWorker.schedule(workManager)
+        // Offline-capable watchdog: restarts LocationForegroundService every 15 min if it was
+        // killed by OEM battery optimisation while the tracking window is active. No network
+        // constraint — this is the only recovery path when internet is unavailable.
+        LocationWatchdogWorker.schedule(workManager)
         // Cancel any previously scheduled notification polling worker — FCM handles delivery now.
         NotificationSyncWorker.cancel(workManager)
         AppInstallationSyncWorker.schedulePeriodic(workManager)

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -68,7 +69,8 @@ fun HomeScreen(
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
     onDashboardClick: () -> Unit = {},
-    onCameraWithGroup: (Long) -> Unit = {}
+    onCameraWithGroup: (Long) -> Unit = {},
+    onTrackingSetupClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val groupUiState by groupSelectionViewModel.uiState.collectAsState()
@@ -85,7 +87,8 @@ fun HomeScreen(
         onLogoutConfirmed = viewModel::onLogoutConfirmed,
         onLogoutDismissed = viewModel::onLogoutDismissed,
         onDashboardClick = onDashboardClick,
-        onFabClick = { showGroupDialog = true }
+        onFabClick = { showGroupDialog = true },
+        onTrackingSetupClick = onTrackingSetupClick
     )
 
     if (showGroupDialog) {
@@ -120,7 +123,8 @@ fun HomeScreenContent(
     onLogoutConfirmed: () -> Unit = {},
     onLogoutDismissed: () -> Unit = {},
     onDashboardClick: () -> Unit = {},
-    onFabClick: () -> Unit = {}
+    onFabClick: () -> Unit = {},
+    onTrackingSetupClick: () -> Unit = {}
 ) {
     if (uiState.showLogoutDialog) {
         LogoutDialog(onConfirm = onLogoutConfirmed, onDismiss = onLogoutDismissed)
@@ -162,6 +166,11 @@ fun HomeScreenContent(
                 errorMessage = uiState.dashboardError,
                 onClick = onDashboardClick
             )
+
+            if (uiState.trackingHealthNeedsAttention) {
+                Spacer(modifier = Modifier.height(16.dp))
+                TrackingHealthWarningCard(onClick = onTrackingSetupClick)
+            }
 
             Spacer(modifier = Modifier.weight(1f))
         }
@@ -380,6 +389,57 @@ private fun BottomSquareButton(modifier: Modifier = Modifier, onClick: () -> Uni
             tint = Color.White,
             modifier = Modifier.size(32.dp)
         )
+    }
+}
+
+@Composable
+private fun TrackingHealthWarningCard(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFFFF3E0),
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFE65100),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Tracking Needs Attention",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFE65100)
+                    )
+                    Text(
+                        text = "Location hasn't been collected recently. Tap to fix device settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF5D4037)
+                    )
+                }
+            }
+            Text(
+                text = "Fix Tracking",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE65100)
+            )
+        }
     }
 }
 
