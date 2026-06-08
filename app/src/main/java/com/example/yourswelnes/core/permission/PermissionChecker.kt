@@ -1,6 +1,7 @@
 package com.example.yourswelnes.core.permission
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -56,6 +57,19 @@ class PermissionChecker @Inject constructor(
     fun isBatteryOptimizationExempt(): Boolean =
         (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
             .isIgnoringBatteryOptimizations(context.packageName)
+
+    /**
+     * Whether the app may schedule EXACT alarms — required for the Doze-proof tracking-window
+     * start (TrackingAlarmScheduler). The runtime permission SCHEDULE_EXACT_ALARM was introduced
+     * in Android 12 (API 31 / S); on apps targeting Android 13+ it is denied by default, so this
+     * commonly returns false on modern devices until the user grants it via the wizard step.
+     * Pre-S devices need no grant — exact alarms work unconditionally, so return true. Unlike
+     * battery optimization this is a reliable AOSP API and reflects the setting synchronously.
+     */
+    fun canScheduleExactAlarms(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+        else true
 
     private fun check(permission: String): Boolean =
         ActivityCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

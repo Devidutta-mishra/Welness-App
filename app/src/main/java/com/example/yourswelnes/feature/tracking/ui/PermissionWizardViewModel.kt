@@ -87,6 +87,14 @@ class PermissionWizardViewModel @Inject constructor(
      */
     fun onResumeRefresh() {
         val step = _uiState.value.currentStep ?: return
+
+        // OEM steps (Vivo Auto Start / Background Activity, MIUI, etc.) are NOT verifiable —
+        // Android cannot read these proprietary settings. Never check or auto-advance them on
+        // resume; returning from the OEM settings screen must leave wizard state untouched.
+        // The user confirms completion explicitly via the "I Have Done This" button (advance()).
+        // Standard Android permissions and battery optimization below remain strictly verified.
+        if (step.type == WizardStepType.OEM_STEP) return
+
         if (step.type == WizardStepType.BATTERY_OPTIMIZATION) {
             viewModelScope.launch {
                 val isGranted = batteryOptimizationManager.checkAfterReturn()
@@ -109,6 +117,51 @@ class PermissionWizardViewModel @Inject constructor(
      * see [loadAndStart] for why.
      */
     fun advance() {
+        advanceInternal()
+    }
+
+    /**
+     * Called when the user opens the battery-optimization settings screen. Reveals the manual
+     * "I Have Done This" fallback so they are not permanently blocked on OEM builds where
+     * isIgnoringBatteryOptimizations() does not reflect the device's own battery toggle.
+     * The verified auto-advance path still wins: if the system reports the exemption on return,
+     * the step advances automatically and this fallback button is never needed.
+     */
+    fun onBatterySettingsOpened() {
+        _uiState.update { it.copy(batteryManualConfirmAvailable = true) }
+    }
+
+    /**
+     * Manual bypass for the battery step — only reachable after the user has visited the
+     * settings screen (the button is hidden until then). Advances past battery on the user's
+     * assertion that they enabled it, for devices where the system API cannot confirm it.
+     * Standard runtime permissions and the verified battery auto-advance are unaffected.
+     */
+    fun confirmBatteryManually() {
+        val step = _uiState.value.currentStep ?: return
+        if (step.type != WizardStepType.BATTERY_OPTIMIZATION) return
+        Timber.tag("BatteryOpt").i("BATTERY MANUAL CONFIRM | user-asserted exemption after visiting settings")
+        advanceInternal()
+    }
+
+    /**
+     * Reveals the manual "I Have Done This" fallback on the exact-alarm step once the user has
+     * opened the Alarms & reminders screen. The verified auto-advance still wins: if
+     * canScheduleExactAlarms() reports true on return, the step advances automatically.
+     */
+    fun onExactAlarmSettingsOpened() {
+        _uiState.update { it.copy(exactAlarmManualConfirmAvailable = true) }
+    }
+
+    /**
+     * Manual bypass for the exact-alarm step — only reachable after the user has visited the
+     * settings screen. Lets a user who declines exact alarms proceed; the scheduler falls back to
+     * an inexact Doze alarm (window may open a few minutes late). Verified auto-advance is unaffected.
+     */
+    fun confirmExactAlarmManually() {
+        val step = _uiState.value.currentStep ?: return
+        if (step.type != WizardStepType.EXACT_ALARM) return
+        Timber.tag("PermWizard").i("EXACT ALARM MANUAL CONFIRM | proceeding with inexact-alarm fallback")
         advanceInternal()
     }
 
@@ -171,6 +224,7 @@ class PermissionWizardViewModel @Inject constructor(
         WizardStepType.BACKGROUND_LOCATION -> permissionChecker.hasBackgroundLocation()
         WizardStepType.NOTIFICATION -> permissionChecker.hasNotifications()
         WizardStepType.BATTERY_OPTIMIZATION -> batteryOptimizationManager.checkNow()
+        WizardStepType.EXACT_ALARM -> permissionChecker.canScheduleExactAlarms()
         WizardStepType.OEM_STEP -> false
     }
 
@@ -183,9 +237,11 @@ class PermissionWizardViewModel @Inject constructor(
      *  1. Fine Location        — mandatory, verifiable, blocks progression
      *  2. Background Location   — mandatory, verifiable, requested only after fine is granted
      *  3. Notification          — mandatory, verifiable
-     *  4. Battery Optimization  — mandatory, verifiable via isIgnoringBatteryOptimizations();
-     *                             because it is verifiable it is a hard gate
-     *  5. OEM steps             — recommended only; Android cannot verify them, so they NEVER
+     *  4. Battery Optimization  — verifiable via isIgnoringBatteryOptimizations(); manual
+     *                             "I Have Done This" fallback for OEMs whose API lags the toggle
+     *  5. Exact Alarms          — verifiable via canScheduleExactAlarms(); needed for the
+     *                             Doze-proof window start. Manual fallback → inexact alarm if declined
+     *  6. OEM steps             — recommended only; Android cannot verify them, so they NEVER
      *                             block. Already-dismissed IDs are excluded so they never reappear.
      *
      * No activity-recognition / step-counter / fitness permission is requested — this app
@@ -256,6 +312,24 @@ class PermissionWizardViewModel @Inject constructor(
                 "causing missed tracking data. This app needs the battery exemption to track " +
                 "reliably all day — even overnight and while locked.",
             primaryButtonLabel = "Allow",
+            isMandatory = true
+        )
+
+        // Exact alarms — verifiable via canScheduleExactAlarms(). Needed so the tracking window
+        // opens at the precise time through Deep Doze (TrackingAlarmScheduler). On Android 13+
+        // SCHEDULE_EXACT_ALARM is denied by default, so this step appears on most modern devices.
+        // Not a hard Home gate: if the user declines, the scheduler degrades to an inexact Doze
+        // alarm, so a manual "I Have Done This" fallback (revealed after opening settings) lets
+        // them proceed rather than being trapped.
+        if (!permissionChecker.canScheduleExactAlarms()) steps += WizardStep(
+            id = "exact_alarm",
+            type = WizardStepType.EXACT_ALARM,
+            title = "Precise Tracking Schedule",
+            bodyText = "To begin tracking the moment your club's window opens — even after your " +
+                "phone has been locked and idle overnight — this app needs permission to schedule " +
+                "exact alarms. Without it, tracking may start a few minutes late.",
+            noteText = "On the next screen, turn on \"Allow setting alarms and reminders\".",
+            primaryButtonLabel = "Allow Exact Alarms",
             isMandatory = true
         )
 

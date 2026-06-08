@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.Context
 import androidx.work.WorkManager
+import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.worker.AppInstallationSyncWorker
 import com.example.yourswelnes.core.worker.LocationUploadWorker
@@ -40,7 +41,8 @@ class HomeViewModel @Inject constructor(
     private val appLockManager: AppLockManager,
     private val locationConfigRepository: LocationConfigRepository,
     private val groupDetailsRepository: GroupDetailsRepository,
-    private val locationPrefs: LocationPreferencesDataStore
+    private val locationPrefs: LocationPreferencesDataStore,
+    private val trackingAlarmScheduler: TrackingAlarmScheduler
 ) : ViewModel() {
 
     val isLockRequired: StateFlow<Boolean> = appLockManager.isLockRequired
@@ -68,6 +70,11 @@ class HomeViewModel @Inject constructor(
         NotificationSyncWorker.cancel(workManager)  // FCM handles delivery — cancel any stale polling work
         AppInstallationSyncWorker.schedulePeriodic(workManager)
         // No need to scheduleOneTime for AppInstallation here as it's intended for app start
+
+        // Arm the Doze-proof exact alarm now that config is (or is about to be) cached. The watchdog
+        // above is a 15-min periodic worker that Deep Doze defers overnight; the exact alarm fires
+        // precisely at the window start regardless of Doze. Reads cached config only — offline-safe.
+        viewModelScope.launch { trackingAlarmScheduler.scheduleNextWindowStart() }
     }
 
     private fun observeUser() {
@@ -226,6 +233,10 @@ class HomeViewModel @Inject constructor(
             LocationWatchdogWorker.cancel(workManager)
             NotificationSyncWorker.cancel(workManager)
             AppInstallationSyncWorker.cancel(workManager)
+
+            // Cancel the exact tracking-window alarm so the leaving user's window can't wake the
+            // service for the next user. Application.onCreate re-arms it when User B logs in.
+            trackingAlarmScheduler.cancel()
 
             // 3. Clear all in-memory and persisted caches scoped to the leaving user.
             groupDetailsRepository.clearCache()

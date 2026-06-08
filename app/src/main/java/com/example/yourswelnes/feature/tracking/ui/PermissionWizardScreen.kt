@@ -1,11 +1,7 @@
 package com.example.yourswelnes.feature.tracking.ui
 
 import android.Manifest
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
@@ -45,9 +42,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -122,6 +119,12 @@ fun PermissionWizardScreen(
     // StartActivityForResult always calls onPause() and delivers a result callback regardless
     // of task state, which guarantees the re-check always happens.
     val batterySettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.onResumeRefresh() }
+
+    // Exact-alarm ("Alarms & reminders") settings. Same StartActivityForResult rationale as
+    // battery above — guarantees the canScheduleExactAlarms() re-check fires on return.
+    val exactAlarmSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { viewModel.onResumeRefresh() }
 
@@ -201,49 +204,39 @@ fun PermissionWizardScreen(
                     }
 
                     WizardStepType.OEM_STEP -> {
-                        val oemStep = step.oemStep
-                        if (oemStep != null && !oemStep.isManual) {
-                            // Launch the OEM settings screen then mark the step dismissed.
-                            // We call advance() immediately after launch because the OEM screen
-                            // has no verifiable completion state — recording the intent launch
-                            // itself is the best signal we have that the user engaged with it.
-                            oemStep.launchAction(context)
-                            viewModel.advance()
-                        } else {
-                            // Manual step (e.g. "Lock in Recents") — primary button is "I've Done This".
-                            viewModel.advance()
-                        }
+                        // Primary button ONLY opens the OEM settings screen — it never advances.
+                        // The user enables the proprietary setting, returns, and then taps the
+                        // explicit "I Have Done This" button (onConfirm) to continue. Manual
+                        // steps have no screen to open, so this is a no-op for them.
+                        step.oemStep?.takeIf { !it.isManual }?.launchAction(context)
                     }
 
                     WizardStepType.BATTERY_OPTIMIZATION -> {
-                        val packageUri = Uri.parse("package:${context.packageName}")
-                        try {
-                            batterySettingsLauncher.launch(
-                                Intent(
-                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                    packageUri
-                                )
-                            )
-                        } catch (e: ActivityNotFoundException) {
-                            // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS throws on some Xiaomi
-                            // builds that restrict per-app battery settings via their own UI.
-                            try {
-                                batterySettingsLauncher.launch(
-                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                )
-                            } catch (e2: ActivityNotFoundException) {
-                                batterySettingsLauncher.launch(
-                                    Intent(
-                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                        packageUri
-                                    )
-                                )
-                            }
-                        }
+                        launchBatterySettings(batterySettingsLauncher, context)
+                        // Reveal the manual "I Have Done This" fallback for the return trip, in
+                        // case the system API never reports the exemption on this device.
+                        viewModel.onBatterySettingsOpened()
+                    }
+
+                    WizardStepType.EXACT_ALARM -> {
+                        launchExactAlarmSettings(exactAlarmSettingsLauncher, context)
+                        // Reveal the manual fallback for the return trip so a user who declines (or
+                        // whose device delays the toggle) can still proceed with the inexact alarm.
+                        viewModel.onExactAlarmSettingsOpened()
                     }
                 }
             },
-            onSkip = viewModel::advance
+            // Explicit manual confirmation for OEM steps ("I Have Done This"). Advancing past the
+            // last step fires `done`, which navigates to Home (handled in AppNavGraph).
+            onConfirm = viewModel::advance,
+            // Battery fallback: shown only after the user has opened battery settings, so a
+            // device that never reports isIgnoringBatteryOptimizations()=true can still proceed.
+            showBatteryManualConfirm = uiState.batteryManualConfirmAvailable,
+            onBatteryManualConfirm = viewModel::confirmBatteryManually,
+            // Exact-alarm fallback: shown only after the user has opened the Alarms & reminders
+            // screen, so a user who declines can still proceed (scheduler uses the inexact alarm).
+            showExactAlarmManualConfirm = uiState.exactAlarmManualConfirmAvailable,
+            onExactAlarmManualConfirm = viewModel::confirmExactAlarmManually
         )
     }
 }
@@ -376,52 +369,127 @@ private fun WizardStepContent(step: WizardStep) {
 private fun WizardActionButtons(
     step: WizardStep,
     onPrimaryAction: () -> Unit,
-    onSkip: () -> Unit
+    onConfirm: () -> Unit,
+    showBatteryManualConfirm: Boolean,
+    onBatteryManualConfirm: () -> Unit,
+    showExactAlarmManualConfirm: Boolean,
+    onExactAlarmManualConfirm: () -> Unit
 ) {
+    val isOemStep = step.type == WizardStepType.OEM_STEP
+    val isManualOemStep = isOemStep && step.oemStep?.isManual == true
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        val isManualOemStep = step.type == WizardStepType.OEM_STEP && step.oemStep?.isManual == true
+        when {
+            // ── Non-manual OEM step (e.g. Vivo "Open Auto Start") ──────────────────
+            // Two explicit actions: the filled button opens the OEM screen (no verification),
+            // and the outlined "I Have Done This" button is the manual confirmation that the
+            // user taps after enabling the proprietary setting — that is what advances/finishes.
+            isOemStep && !isManualOemStep -> {
+                WizardPrimaryButton(
+                    label = step.primaryButtonLabel,
+                    icon = iconForStep(step.type),
+                    onClick = onPrimaryAction
+                )
+                OutlinedButton(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "I Have Done This",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
 
-        Button(
-            onClick = onPrimaryAction,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = if (isManualOemStep) Icons.Filled.CheckCircle
-                else iconForStep(step.type),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = step.primaryButtonLabel,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        if (!step.isMandatory) {
-            TextButton(
-                onClick = onSkip,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Skip for Now",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            // ── Manual OEM step (e.g. "Lock app in Recents") — confirm only ────────
+            isManualOemStep -> {
+                WizardPrimaryButton(
+                    label = "I Have Done This",
+                    icon = Icons.Filled.CheckCircle,
+                    onClick = onConfirm
                 )
             }
+
+            // ── Mandatory step (Location / Background / Notification / Battery / Exact Alarm) ─
+            // Primary action is strictly verified on return. The battery and exact-alarm steps
+            // additionally offer a manual "I Have Done This" fallback — but only AFTER the user
+            // has opened the relevant settings screen — so a device whose system API never
+            // reports the change (battery) or a user who declines (exact alarm → inexact fallback)
+            // cannot be trapped. Location / Background / Notification have no such fallback and
+            // stay strictly verified.
+            else -> {
+                WizardPrimaryButton(
+                    label = step.primaryButtonLabel,
+                    icon = iconForStep(step.type),
+                    onClick = onPrimaryAction
+                )
+                val manualConfirm: (() -> Unit)? = when (step.type) {
+                    WizardStepType.BATTERY_OPTIMIZATION ->
+                        onBatteryManualConfirm.takeIf { showBatteryManualConfirm }
+                    WizardStepType.EXACT_ALARM ->
+                        onExactAlarmManualConfirm.takeIf { showExactAlarmManualConfirm }
+                    else -> null
+                }
+                if (manualConfirm != null) {
+                    OutlinedButton(
+                        onClick = manualConfirm,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "I Have Done This",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun WizardPrimaryButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary
+        )
+    ) {
+        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -430,5 +498,6 @@ private fun iconForStep(type: WizardStepType): ImageVector = when (type) {
     WizardStepType.BACKGROUND_LOCATION  -> Icons.Filled.MyLocation
     WizardStepType.NOTIFICATION         -> Icons.Filled.Notifications
     WizardStepType.BATTERY_OPTIMIZATION -> Icons.Filled.BatteryChargingFull
+    WizardStepType.EXACT_ALARM          -> Icons.Filled.Alarm
     WizardStepType.OEM_STEP             -> Icons.Filled.SettingsApplications
 }

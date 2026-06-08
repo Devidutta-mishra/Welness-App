@@ -11,24 +11,24 @@ data class LocationUiState(
     val hasChecked: Boolean = false
 ) {
     /**
-     * The four mandatory requirements that MUST all be satisfied before Home is reachable:
-     *   1. Fine Location          (ACCESS_FINE_LOCATION)
-     *   2. Background Location     (ACCESS_BACKGROUND_LOCATION, Android Q+)
-     *   3. Notifications           (POST_NOTIFICATIONS, Android 13+)
-     *   4. Battery Optimization    (isIgnoringBatteryOptimizations)
+     * The three mandatory permissions that MUST all be granted before Home is reachable:
+     *   1. Fine Location       (ACCESS_FINE_LOCATION)
+     *   2. Background Location  (ACCESS_BACKGROUND_LOCATION, Android Q+)
+     *   3. Notifications        (POST_NOTIFICATIONS, Android 13+)
      *
-     * Battery optimization is included as a hard gate because — unlike OEM auto-start /
-     * background-activity settings — it is RELIABLY VERIFIABLE through the standard Android
-     * API PowerManager.isIgnoringBatteryOptimizations() on every device (min SDK 29 always
-     * ships the ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dialog). Because we can verify it,
-     * we can safely require it. OEM settings, which Android cannot verify, are NEVER gated.
+     * Battery optimization is NOT a hard Home gate. It is still strongly guided inside the
+     * permission wizard (a mandatory step there, verified via isIgnoringBatteryOptimizations),
+     * but it cannot permanently block Home: on some OEM builds (ColorOS / FuntouchOS) the
+     * system API does not reflect the device's own battery toggle, so a user who has actually
+     * disabled optimization would otherwise be trapped forever. The wizard offers an explicit
+     * "I Have Done This" fallback for that case, and ongoing battery-kill problems are caught
+     * by the Home tracking-health monitor ("Tracking Needs Attention" → Fix Tracking).
      */
     val mandatoryRequirementsMet: Boolean
         get() = hasChecked &&
                 hasFineLocationPermission &&
                 hasBackgroundLocationPermission &&
-                hasNotificationPermission &&
-                isBatteryOptimizationExempt
+                hasNotificationPermission
 
     /**
      * True when a mandatory requirement is missing — triggers the wizard redirect in

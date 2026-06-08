@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,7 +43,7 @@ fun BiometricLockScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val activity = context as FragmentActivity
-    val authManager = AuthenticationManager()
+    val authManager = remember { AuthenticationManager() }
 
     LaunchedEffect(viewModel) {
         viewModel.navigationEvent.collect { event ->
@@ -52,16 +53,24 @@ fun BiometricLockScreen(
         }
     }
 
-    // Auto-show prompt when screen appears
-    LaunchedEffect(Unit) {
-        if (viewModel.canAuthenticate()) {
-            authManager.showPrompt(
+    val authenticate = {
+        viewModel.clearError()
+        when (viewModel.resolveAuthRequirement()) {
+            AuthRequirement.BIOMETRIC_PROMPT -> authManager.showPrompt(
                 activity = activity,
                 onSuccess = viewModel::onAuthSuccess,
                 onError = viewModel::onAuthError
             )
+            // No screen lock on the device — nothing to verify against, so let the user in.
+            AuthRequirement.BYPASS -> viewModel.onAuthSuccess()
+            AuthRequirement.UNAVAILABLE -> viewModel.onAuthError(
+                "Unable to verify your identity on this device."
+            )
         }
     }
+
+    // Auto-trigger when the screen appears (shows the prompt, or bypasses an unsecured device).
+    LaunchedEffect(Unit) { authenticate() }
 
     Column(
         modifier = Modifier
@@ -117,16 +126,7 @@ fun BiometricLockScreen(
         Spacer(modifier = Modifier.height(40.dp))
 
         Button(
-            onClick = {
-                viewModel.clearError()
-                if (viewModel.canAuthenticate()) {
-                    authManager.showPrompt(
-                        activity = activity,
-                        onSuccess = viewModel::onAuthSuccess,
-                        onError = viewModel::onAuthError
-                    )
-                }
-            },
+            onClick = authenticate,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.White

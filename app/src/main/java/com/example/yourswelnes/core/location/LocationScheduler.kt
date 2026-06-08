@@ -1,6 +1,8 @@
 package com.example.yourswelnes.core.location
 
+import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -68,6 +70,29 @@ class LocationScheduler @Inject constructor() {
         } else {
             (SECONDS_PER_DAY - nowSeconds + startSeconds) * 1000L
         }
+    }
+
+    /**
+     * Epoch millis (wall-clock / RTC) of the next time [startTime] occurs. This is the trigger
+     * instant for the exact alarm that opens the tracking window (see TrackingAlarmScheduler).
+     * If today's start time has not yet passed it returns today's instant; otherwise it rolls to
+     * tomorrow. Equal-to-now also rolls forward so a re-arm right after the alarm fires targets the
+     * NEXT day, not the same instant. Returns null on unparseable input so the caller can skip
+     * arming rather than schedule a bogus alarm.
+     *
+     * [now] and [zone] are injectable for deterministic testing and default to the device clock.
+     */
+    fun nextWindowStartEpochMillis(
+        startTime: String,
+        now: LocalDateTime = LocalDateTime.now(),
+        zone: ZoneId = ZoneId.systemDefault()
+    ): Long? {
+        val start = parseTimeOrNull(startTime) ?: return null
+        var next = now.toLocalDate().atTime(start)
+        if (!next.isAfter(now)) {
+            next = next.plusDays(1)
+        }
+        return next.atZone(zone).toInstant().toEpochMilli()
     }
 
     /** Distance in meters between two lat/lon points using Android's Location API. */

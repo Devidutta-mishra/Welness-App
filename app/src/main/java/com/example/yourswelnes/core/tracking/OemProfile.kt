@@ -120,11 +120,36 @@ private fun buildOemSteps(
             description = "Allow the app to start automatically in the background.",
             actionLabel = "Open Auto Start",
             launchAction = { ctx ->
+                // FuntouchOS / iQOO moved these screens between versions. Try the newest
+                // (iManager — com.iqoo.secure) targets first, then the older
+                // permission-manager components, and only then fall back to the app's details
+                // page. launchOemIntent tries each in order and catches
+                // ActivityNotFoundException / SecurityException, so a component that does not
+                // exist on a given FuntouchOS build is skipped silently instead of crashing —
+                // and we never land on the wrong (battery-optimization) screen.
                 ctx.launchOemIntent(
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.iqoo.secure",
+                            "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"
+                        )
+                    ),
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.iqoo.secure",
+                            "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"
+                        )
+                    ),
                     Intent().setComponent(
                         ComponentName(
                             "com.vivo.permissionmanager",
                             "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+                        )
+                    ),
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.vivo.permissionmanager",
+                            "com.vivo.permissionmanager.activity.PurviewTabActivity"
                         )
                     ),
                     fallback = appDetailsIntent(ctx, packageName)
@@ -136,11 +161,25 @@ private fun buildOemSteps(
             description = "Permit background data usage for continuous location tracking.",
             actionLabel = "Open Background Settings",
             launchAction = { ctx ->
+                // Same robust chain — the Background Activity screen lives in the same
+                // FuntouchOS surfaces, so reuse the newest-to-oldest ordering.
                 ctx.launchOemIntent(
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.iqoo.secure",
+                            "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"
+                        )
+                    ),
                     Intent().setComponent(
                         ComponentName(
                             "com.vivo.permissionmanager",
                             "com.vivo.permissionmanager.activity.PurviewTabActivity"
+                        )
+                    ),
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.vivo.permissionmanager",
+                            "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
                         )
                     ),
                     fallback = appDetailsIntent(ctx, packageName)

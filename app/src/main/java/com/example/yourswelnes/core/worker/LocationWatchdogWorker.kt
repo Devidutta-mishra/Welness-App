@@ -13,6 +13,7 @@ import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.core.location.LocationScheduler
 import com.example.yourswelnes.core.location.LocationServiceState
+import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.core.service.LocationForegroundService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -44,7 +45,8 @@ class LocationWatchdogWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val authPrefs: AuthPreferencesDataStore,
     private val locationPrefs: LocationPreferencesDataStore,
-    private val locationScheduler: LocationScheduler
+    private val locationScheduler: LocationScheduler,
+    private val trackingAlarmScheduler: TrackingAlarmScheduler
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -58,6 +60,12 @@ class LocationWatchdogWorker @AssistedInject constructor(
             return Result.success()
         }
         Timber.tag(TAG).i("USER SESSION LOADED | Authenticated user present in DataStore")
+
+        // Self-heal the exact alarm. Exact alarms are one-shot and re-armed by TrackingAlarmReceiver
+        // after each fire; if that re-arm was ever dropped (process killed mid-handoff), the daily
+        // window would silently stop. Re-arming here every run (idempotent — the PendingIntent is
+        // stable) closes that gap. Safe and offline: scheduleNextWindowStart() reads only DataStore.
+        trackingAlarmScheduler.scheduleNextWindowStart()
 
         // Gate 2: only restart during the tracking window.
         val startTime = locationPrefs.getTrackingStartTime()

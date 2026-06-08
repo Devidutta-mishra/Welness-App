@@ -56,6 +56,16 @@ private const val CONFIG_REFRESH_INTERVAL_MS = 30 * 60 * 1000L
 // Keeps the interval responsive to backend changes without hammering the store.
 private const val WINDOW_POLL_INTERVAL_MS = 30_000L
 
+// Sustained partial wake lock held only while collecting inside the window. A foreground service
+// does NOT by itself keep the CPU awake — during Deep Doze the OS suspends the CPU and withholds
+// location between maintenance windows even for an FGS. A battery-optimization-exempt app (which
+// onboarding enforces) IS allowed to hold a partial wake lock during Doze, and that is what keeps
+// the CPU alive to deliver GPS fixes while the phone is locked/idle overnight. The lock is
+// refreshed every WINDOW_POLL_INTERVAL_MS with a timeout safety net so a killed service can never
+// hold the CPU awake indefinitely; it is released explicitly the moment we leave the window.
+private const val WAKELOCK_TAG = "yourswelnes:location_collection_wakelock"
+private const val WAKELOCK_TIMEOUT_MS = 5 * 60 * 1000L
+
 @AndroidEntryPoint
 class LocationForegroundService : android.app.Service() {
 
@@ -77,6 +87,9 @@ class LocationForegroundService : android.app.Service() {
     private var trackingJob: Job? = null
     private var configRefreshJob: Job? = null
     private var uploadJob: Job? = null
+
+    // Held only while actively collecting inside the window (see WAKELOCK_TAG comment above).
+    private var collectionWakeLock: PowerManager.WakeLock? = null
 
     private val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
@@ -166,7 +179,23 @@ class LocationForegroundService : android.app.Service() {
             }
             Timber.tag(TAG).d("GPS state receiver registered")
         } catch (e: SecurityException) {
-            Timber.tag(TAG).e(e, "Cannot start FGS — permission missing or not in foreground state")
+            // API 34+: starting an FGS of type location while FINE/COARSE is not granted.
+            Timber.tag(TAG).e(e, "Cannot start FGS — location permission missing")
+            stopSelf()
+        } catch (e: IllegalStateException) {
+            // API 31+: ForegroundServiceStartNotAllowedException (background start without an
+            // active exemption) and the API 34 typed-FGS exceptions (Missing/Invalid
+            // ForegroundServiceTypeException) are all IllegalStateException subclasses. Without
+            // this branch they would be UNCAUGHT and crash the background process — exactly during
+            // the locked/Doze window this feature targets. Stop cleanly instead; the watchdog and
+            // next exact alarm will retry once the exemption is available.
+            Timber.tag(TAG).e(e, "Cannot start FGS — background-start not allowed / invalid service type")
+            stopSelf()
+        } catch (e: Exception) {
+            // Last-resort guard: any other failure during foreground promotion must not crash a
+            // background-started service. Stop and let the recovery layers (watchdog / exact alarm)
+            // bring collection back when conditions allow.
+            Timber.tag(TAG).e(e, "Unexpected failure promoting foreground service — stopping cleanly")
             stopSelf()
         }
     }
@@ -240,6 +269,10 @@ class LocationForegroundService : android.app.Service() {
                 if (locationScheduler.isInTrackingWindow(startTime, endTime)) {
                     Timber.tag(TAG).i("TRACKING WINDOW ACTIVE | Inside window $startTime–$endTime — ensuring GPS updates")
                     startContinuousUpdates(intervalMs)
+                    // Keep the CPU awake for the duration of collection. Refreshed every loop tick
+                    // (<= WINDOW_POLL_INTERVAL_MS) so a long window stays covered; the WAKELOCK_TIMEOUT_MS
+                    // safety net guarantees it is dropped if the service is ever killed mid-window.
+                    acquireOrRefreshWakeLock()
 
                     // Sleep until the window closes or until we need to re-read config —
                     // whichever comes first. This lets a backend interval change take effect
@@ -251,6 +284,9 @@ class LocationForegroundService : android.app.Service() {
                         Timber.tag(TAG).d("OUTSIDE WINDOW | Stopping continuous location updates")
                         stopContinuousUpdates()
                     }
+                    // Release the CPU outside the window — no need to keep the device awake while we
+                    // sleep until the next window opens. Keeps battery cost scoped to collection only.
+                    releaseWakeLock()
                     val waitMs = locationScheduler.millisUntilWindowStart(startTime)
                     Timber.tag(TAG).d(
                         "OUTSIDE WINDOW | window=$startTime–$endTime | now=$currentTime | " +
@@ -318,6 +354,32 @@ class LocationForegroundService : android.app.Service() {
         locationUpdatesActive = false
         activeIntervalMs = -1L
         Timber.tag(TAG).d("Continuous location updates stopped")
+    }
+
+    /**
+     * Acquire (or refresh the timeout on) the partial wake lock that keeps the CPU awake during
+     * collection. Idempotent and reference-count-disabled: re-calling it each loop tick simply
+     * resets WAKELOCK_TIMEOUT_MS so a multi-hour window stays covered without stacking locks.
+     */
+    private fun acquireOrRefreshWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wl = collectionWakeLock ?: pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG)
+            .also {
+                it.setReferenceCounted(false)
+                collectionWakeLock = it
+            }
+        try {
+            wl.acquire(WAKELOCK_TIMEOUT_MS)
+            Timber.tag(TAG).d("WAKELOCK HELD | CPU kept awake for in-window collection (timeout refreshed)")
+        } catch (e: Exception) {
+            // WAKE_LOCK permission missing or OEM restriction — collection continues best-effort.
+            Timber.tag(TAG).e(e, "Could not acquire collection wake lock — Doze may throttle fixes")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        collectionWakeLock?.let { if (it.isHeld) it.release() }
+        Timber.tag(TAG).d("WAKELOCK RELEASED | CPU no longer held by collection service")
     }
 
     private fun startConfigRefreshLoop() {
@@ -431,6 +493,7 @@ class LocationForegroundService : android.app.Service() {
     private fun stopTracking() {
         Timber.tag(TAG).d("Stopping all tracking — cancelling jobs and location updates")
         stopContinuousUpdates()
+        releaseWakeLock()
         trackingJob?.cancel(); trackingJob = null
         configRefreshJob?.cancel(); configRefreshJob = null
         uploadJob?.cancel(); uploadJob = null

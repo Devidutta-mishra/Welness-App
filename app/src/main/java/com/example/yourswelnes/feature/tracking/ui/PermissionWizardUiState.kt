@@ -4,11 +4,11 @@ import com.example.yourswelnes.core.tracking.OemSetupStep
 
 /**
  * Wizard step ordering, matching the business flow for this location-tracking app:
- *   Location → Background Location → Notification → Battery Optimization → OEM Setup
+ *   Location → Background Location → Notification → Battery Optimization → Exact Alarms → OEM Setup
  *
- * The first four are mandatory and reliably verifiable, so each blocks progression until met.
- * OEM steps come last because they cannot be verified by Android — they are guidance only and
- * never block the user from reaching Home.
+ * The first five are reliably verifiable, so each is checked on return. OEM steps come last
+ * because they cannot be verified by Android — they are guidance only and never block the user
+ * from reaching Home.
  *
  * This app collects location only; it requests NO activity-recognition, step-counter, motion,
  * or other fitness permissions — none are required by the tracking pipeline.
@@ -18,6 +18,7 @@ enum class WizardStepType {
     BACKGROUND_LOCATION,
     NOTIFICATION,
     BATTERY_OPTIMIZATION,
+    EXACT_ALARM,
     OEM_STEP
 }
 
@@ -36,7 +37,15 @@ data class WizardStep(
 data class PermissionWizardUiState(
     val steps: List<WizardStep> = emptyList(),
     val currentStepIndex: Int = 0,
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    // Becomes true once the user has opened the battery settings screen at least once.
+    // Reveals the manual "I Have Done This" fallback on the battery step so users on OEM
+    // builds where isIgnoringBatteryOptimizations() never flips to true are not trapped.
+    val batteryManualConfirmAvailable: Boolean = false,
+    // Same fallback for the exact-alarm step: revealed once the user has opened the
+    // "Alarms & reminders" settings screen, so a user who declines (or whose device delays the
+    // toggle) can still proceed — the app degrades to an inexact Doze alarm rather than trapping.
+    val exactAlarmManualConfirmAvailable: Boolean = false
 ) {
     val currentStep: WizardStep? get() = steps.getOrNull(currentStepIndex)
     val totalSteps: Int get() = steps.size

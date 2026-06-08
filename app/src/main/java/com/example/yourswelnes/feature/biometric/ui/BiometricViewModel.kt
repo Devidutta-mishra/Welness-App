@@ -26,7 +26,17 @@ class BiometricViewModel @Inject constructor(
     private val _navigationEvent = Channel<BiometricNavigationEvent>(Channel.BUFFERED)
     val navigationEvent = _navigationEvent.receiveAsFlow()
 
-    fun canAuthenticate(): Boolean = biometricRepository.canAuthenticate()
+    /**
+     * Decides how the lock screen should verify the user:
+     *  - [AuthRequirement.BIOMETRIC_PROMPT] when a biometric or device credential exists,
+     *  - [AuthRequirement.BYPASS] when the phone has no screen lock at all (nothing to verify against),
+     *  - [AuthRequirement.UNAVAILABLE] for the rare secure-but-unusable case.
+     */
+    fun resolveAuthRequirement(): AuthRequirement = when {
+        biometricRepository.canAuthenticate() -> AuthRequirement.BIOMETRIC_PROMPT
+        !biometricRepository.isDeviceSecure() -> AuthRequirement.BYPASS
+        else -> AuthRequirement.UNAVAILABLE
+    }
 
     fun onAuthSuccess() {
         appLockManager.onAuthSuccess()
@@ -47,4 +57,15 @@ class BiometricViewModel @Inject constructor(
 
 sealed interface BiometricNavigationEvent {
     data object NavigateToHome : BiometricNavigationEvent
+}
+
+enum class AuthRequirement {
+    /** Show the system biometric / device-credential prompt. */
+    BIOMETRIC_PROMPT,
+
+    /** No screen lock on the device — let the user straight through. */
+    BYPASS,
+
+    /** Device is secure but no authenticator is currently usable. */
+    UNAVAILABLE
 }
