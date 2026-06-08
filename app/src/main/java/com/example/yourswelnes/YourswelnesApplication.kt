@@ -7,6 +7,7 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.FcmPreferencesDataStore
+import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.notification.AppNotificationManager
 import com.example.yourswelnes.core.notification.LocationNotificationManager
@@ -32,6 +33,7 @@ class YourswelnesApplication : Application(), Configuration.Provider {
     @Inject lateinit var appNotificationManager: AppNotificationManager
     @Inject lateinit var authPrefs: AuthPreferencesDataStore
     @Inject lateinit var fcmPrefs: FcmPreferencesDataStore
+    @Inject lateinit var trackingAlarmScheduler: TrackingAlarmScheduler
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -92,6 +94,12 @@ class YourswelnesApplication : Application(), Configuration.Provider {
             try {
                 if (authPrefs.isLoggedIn()) {
                     Timber.tag("App").i("WORKER STARTED | User is logged in — ensuring LocationForegroundService is running")
+                    // Arm the Doze-proof exact alarm that opens the next tracking window. This is
+                    // the primary offline recovery path: setExactAndAllowWhileIdle fires precisely
+                    // at the window start even after an overnight lock, where the periodic watchdog
+                    // worker would be deferred by Deep Doze. Armed first so it survives even if the
+                    // immediate FGS start below is blocked by background limits.
+                    trackingAlarmScheduler.scheduleNextWindowStart()
                     ContextCompat.startForegroundService(
                         this@YourswelnesApplication,
                         LocationForegroundService.startIntent(this@YourswelnesApplication)

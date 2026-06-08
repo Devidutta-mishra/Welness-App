@@ -1,11 +1,7 @@
 package com.example.yourswelnes.feature.tracking.ui
 
 import android.Manifest
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -243,22 +239,7 @@ fun TrackingSetupScreen(
                 actionLabel = "Open Battery Settings",
                 isRecommended = true,
                 onAction = {
-                    val packageUri = Uri.parse("package:${context.packageName}")
-                    try {
-                        batterySettingsLauncher.launch(
-                            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
-                        )
-                    } catch (e: ActivityNotFoundException) {
-                        try {
-                            batterySettingsLauncher.launch(
-                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            )
-                        } catch (e2: ActivityNotFoundException) {
-                            batterySettingsLauncher.launch(
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
-                            )
-                        }
-                    }
+                    launchBatterySettings(batterySettingsLauncher, context)
                 }
             )
 

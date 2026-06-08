@@ -12,6 +12,11 @@ import com.example.yourswelnes.core.worker.LocationUploadWorker
 import com.example.yourswelnes.core.worker.LocationWatchdogWorker
 import com.example.yourswelnes.core.worker.NotificationSyncWorker
 import com.example.yourswelnes.core.worker.ScheduleSyncWorker
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class BootReceiver : BroadcastReceiver() {
@@ -51,6 +56,21 @@ class BootReceiver : BroadcastReceiver() {
         // FCM handles notification delivery — cancel any stale polling worker that may
         // have been re-enqueued by a previous app version.
         NotificationSyncWorker.cancel(workManager)
-        Timber.tag("BootReceiver").d("DEVICE REBOOT RECOVERY | Service start and worker re-registration complete")
+
+        // Re-arm the exact tracking-window alarm. The OS clears all alarms across a reboot, so
+        // without this the Doze-proof window start would be lost until the user next opens the app.
+        // goAsync() keeps the receiver alive for the brief DataStore read.
+        val trackingAlarmScheduler = EntryPointAccessors.fromApplication(
+            context.applicationContext, TrackingAlarmEntryPoint::class.java
+        ).trackingAlarmScheduler()
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                trackingAlarmScheduler.scheduleNextWindowStart()
+            } finally {
+                pendingResult.finish()
+            }
+        }
+        Timber.tag("BootReceiver").d("DEVICE REBOOT RECOVERY | Service start, worker + exact-alarm re-registration complete")
     }
 }

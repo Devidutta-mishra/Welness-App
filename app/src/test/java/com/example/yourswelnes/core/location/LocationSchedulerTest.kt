@@ -1,8 +1,11 @@
 package com.example.yourswelnes.core.location
 
+import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -92,5 +95,35 @@ class LocationSchedulerTest {
     @Test
     fun millisUntilWindowStart_alreadyPassed_wrapsToTomorrow() {
         assertEquals(23 * HOUR_MS, scheduler.millisUntilWindowStart("06:00", LocalTime.of(7, 0)))
+    }
+
+    // --- nextWindowStartEpochMillis (exact-alarm trigger instant) -----------
+
+    @Test
+    fun nextWindowStart_laterToday_returnsTodayInstant() {
+        val now = LocalDateTime.of(2026, 6, 8, 6, 0)
+        val expected = LocalDateTime.of(2026, 6, 8, 9, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        assertEquals(expected, scheduler.nextWindowStartEpochMillis("09:00", now, ZoneOffset.UTC))
+    }
+
+    @Test
+    fun nextWindowStart_alreadyPassed_rollsToTomorrow() {
+        val now = LocalDateTime.of(2026, 6, 8, 10, 0)
+        val expected = LocalDateTime.of(2026, 6, 9, 9, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        assertEquals(expected, scheduler.nextWindowStartEpochMillis("09:00", now, ZoneOffset.UTC))
+    }
+
+    @Test
+    fun nextWindowStart_exactlyAtStart_rollsToTomorrow() {
+        // Equal-to-now must roll forward so a re-arm right after the alarm fires targets the NEXT
+        // day rather than re-firing for the same instant.
+        val now = LocalDateTime.of(2026, 6, 8, 9, 0)
+        val expected = LocalDateTime.of(2026, 6, 9, 9, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
+        assertEquals(expected, scheduler.nextWindowStartEpochMillis("09:00", now, ZoneOffset.UTC))
+    }
+
+    @Test
+    fun nextWindowStart_unparseable_returnsNull() {
+        assertNull(scheduler.nextWindowStartEpochMillis("garbage", LocalDateTime.of(2026, 6, 8, 6, 0)))
     }
 }

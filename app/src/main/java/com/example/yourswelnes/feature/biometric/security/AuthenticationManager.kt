@@ -1,5 +1,7 @@
 package com.example.yourswelnes.feature.biometric.security
 
+import android.os.Build
+import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -41,10 +43,22 @@ class AuthenticationManager {
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Secure Access")
             .setSubtitle("Verify your identity to continue")
-            .setAllowedAuthenticators(
-                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                        androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-            )
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Biometric, with automatic fall-back to PIN / pattern / password.
+                    setAllowedAuthenticators(
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    )
+                } else {
+                    // API 29 (Android 10): BIOMETRIC_STRONG | DEVICE_CREDENTIAL is an
+                    // unsupported combination for setAllowedAuthenticators and would crash
+                    // build(). Use the legacy flag so users with no enrolled fingerprint are
+                    // still prompted for their device credential.
+                    @Suppress("DEPRECATION")
+                    setDeviceCredentialAllowed(true)
+                }
+            }
             .build()
 
         BiometricPrompt(activity, executor, callback).authenticate(promptInfo)
