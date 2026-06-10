@@ -25,7 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -37,7 +36,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,14 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.yourswelnes.R
 import com.example.yourswelnes.feature.camera.ui.GroupSelectionDialog
 import com.example.yourswelnes.feature.camera.ui.GroupSelectionViewModel
@@ -69,15 +71,23 @@ fun HomeScreen(
     onNotificationsClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
     onDashboardClick: () -> Unit = {},
-    onCameraWithGroup: (Long) -> Unit = {},
-    onTrackingSetupClick: () -> Unit = {}
+    onCameraWithGroup: (Long) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val groupUiState by groupSelectionViewModel.uiState.collectAsState()
     var showGroupDialog by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(Unit) {
         locationViewModel.refreshPermissions()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onAppForegrounded()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     HomeScreenContent(
@@ -87,8 +97,7 @@ fun HomeScreen(
         onLogoutConfirmed = viewModel::onLogoutConfirmed,
         onLogoutDismissed = viewModel::onLogoutDismissed,
         onDashboardClick = onDashboardClick,
-        onFabClick = { showGroupDialog = true },
-        onTrackingSetupClick = onTrackingSetupClick
+        onFabClick = { showGroupDialog = true }
     )
 
     if (showGroupDialog) {
@@ -123,8 +132,7 @@ fun HomeScreenContent(
     onLogoutConfirmed: () -> Unit = {},
     onLogoutDismissed: () -> Unit = {},
     onDashboardClick: () -> Unit = {},
-    onFabClick: () -> Unit = {},
-    onTrackingSetupClick: () -> Unit = {}
+    onFabClick: () -> Unit = {}
 ) {
     if (uiState.showLogoutDialog) {
         LogoutDialog(onConfirm = onLogoutConfirmed, onDismiss = onLogoutDismissed)
@@ -166,11 +174,6 @@ fun HomeScreenContent(
                 errorMessage = uiState.dashboardError,
                 onClick = onDashboardClick
             )
-
-            if (uiState.trackingHealthNeedsAttention) {
-                Spacer(modifier = Modifier.height(16.dp))
-                TrackingHealthWarningCard(onClick = onTrackingSetupClick)
-            }
 
             Spacer(modifier = Modifier.weight(1f))
         }
@@ -328,13 +331,31 @@ private fun ProfileHeader(
             modifier = Modifier.size(140.dp)
         ) {
             if (!profileImageUrl.isNullOrBlank()) {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = profileImageUrl,
                     contentDescription = "Profile",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
-                    placeholder = rememberVectorPainter(Icons.Filled.Person),
-                    error = rememberVectorPainter(Icons.Filled.Person)
+                    loading = {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(40.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    error = {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = "Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(34.dp)
+                        )
+                    }
                 )
             } else {
                 Icon(
@@ -389,57 +410,6 @@ private fun BottomSquareButton(modifier: Modifier = Modifier, onClick: () -> Uni
             tint = Color.White,
             modifier = Modifier.size(32.dp)
         )
-    }
-}
-
-@Composable
-private fun TrackingHealthWarningCard(onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xFFFFF3E0),
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = Color(0xFFE65100),
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "Tracking Needs Attention",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE65100)
-                    )
-                    Text(
-                        text = "Location hasn't been collected recently. Tap to fix device settings.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF5D4037)
-                    )
-                }
-            }
-            Text(
-                text = "Fix Tracking",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFE65100)
-            )
-        }
     }
 }
 

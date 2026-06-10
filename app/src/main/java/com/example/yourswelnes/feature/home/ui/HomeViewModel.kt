@@ -71,10 +71,10 @@ class HomeViewModel @Inject constructor(
         AppInstallationSyncWorker.schedulePeriodic(workManager)
         // No need to scheduleOneTime for AppInstallation here as it's intended for app start
 
-        // Arm the Doze-proof exact alarm now that config is (or is about to be) cached. The watchdog
-        // above is a 15-min periodic worker that Deep Doze defers overnight; the exact alarm fires
-        // precisely at the window start regardless of Doze. Reads cached config only — offline-safe.
-        viewModelScope.launch { trackingAlarmScheduler.scheduleNextWindowStart() }
+        // NOTE: arming the tracking alarm was intentionally moved OUT of here and into
+        // fetchLocationConfig(), where it runs AFTER the config write completes. Arming in this
+        // separate coroutine raced the config fetch: on re-login it frequently armed from the
+        // STALE cached window before the freshly synced time landed, so the new window never fired.
     }
 
     private fun observeUser() {
@@ -93,6 +93,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun recheckTrackingHealth() { checkTrackingHealth() }
+
+    fun onAppForegrounded() { fetchLocationConfig() }
 
     /**
      * Background-tracking health monitor.
@@ -152,6 +154,13 @@ class HomeViewModel @Inject constructor(
                 .onFailure {
                     Timber.tag("HomeViewModel").w("Location config fetch failed (cached will be used): ${it.message}")
                 }
+
+            // Arm (or immediately start, if the window is already open) from the just-saved-or-cached
+            // config. Runs in THIS coroutine, AFTER getLocationConfig() above, so it always sees the
+            // fresh window on a re-login instead of racing the network write. Reaches both paths:
+            //   • online login / dynamic update → getLocationConfig() saved the new time, then we arm it
+            //   • offline login                  → no save happened, evaluateAndApply arms from cache
+            trackingAlarmScheduler.evaluateAndApply()
         }
     }
 

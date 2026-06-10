@@ -18,9 +18,13 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.location.AlarmHandoffWakeLock
 import com.example.yourswelnes.core.location.LocationScheduler
 import com.example.yourswelnes.core.location.LocationServiceState
 import com.example.yourswelnes.core.location.LocationUploader
+import com.example.yourswelnes.core.location.TrackingAlarmScheduler
+import com.example.yourswelnes.core.worker.LocationUploadWorker
+import androidx.work.WorkManager
 import com.example.yourswelnes.core.notification.LocationNotificationManager
 import com.example.yourswelnes.feature.location.data.LocationConfigRepository
 import com.example.yourswelnes.feature.location.data.LocationRepository
@@ -82,6 +86,7 @@ class LocationForegroundService : android.app.Service() {
     @Inject lateinit var locationNotificationManager: LocationNotificationManager
     @Inject lateinit var locationConfigRepository: LocationConfigRepository
     @Inject lateinit var locationUploader: LocationUploader
+    @Inject lateinit var trackingAlarmScheduler: TrackingAlarmScheduler
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var trackingJob: Job? = null
@@ -98,6 +103,15 @@ class LocationForegroundService : android.app.Service() {
     // visibility without a full lock, which is sufficient here because writes are rare.
     @Volatile private var locationUpdatesActive = false
     @Volatile private var activeIntervalMs = -1L
+
+    // True once startForeground() has succeeded for this service instance.
+    @Volatile private var foregroundPromoted = false
+
+    // True once the FIRST collected point of this service run has been written to Room. The
+    // alarm→service hand-off wake lock is released exactly at that transition: offline overnight
+    // there is no A-GPS, so the hardware GPS needs a 10–45 s cold start, and the CPU must stay
+    // held until a real coordinate has been PERSISTED — not merely until the service started.
+    @Volatile private var firstFixPersisted = false
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -162,26 +176,63 @@ class LocationForegroundService : android.app.Service() {
     override fun onCreate() {
         super.onCreate()
         Timber.tag(TAG).d("onCreate — starting foreground service")
-        try {
+        if (!promoteToForeground()) return
+        val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(gpsStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(gpsStateReceiver, filter)
+        }
+        Timber.tag(TAG).d("GPS state receiver registered")
+    }
+
+    /**
+     * Promote to foreground IMMEDIATELY (API 31+ allows ~5 s after startForegroundService(), but
+     * under Doze the process can be frozen long before that, so the promotion happens first thing
+     * in onCreate — i.e. before onStartCommand even runs). Returns false when promotion failed and
+     * the service is already stopping, so callers must not start any work.
+     *
+     * API 34 hard rule verified HERE, inside the service execution block: promoting an FGS of type
+     * "location" without a granted FINE/COARSE runtime permission throws SecurityException and the
+     * OS silently kills the service before any location code runs. Checking first lets us stop
+     * cleanly and leave a diagnosable log instead of relying on the exception path.
+     */
+    private fun promoteToForeground(): Boolean {
+        if (foregroundPromoted) return true
+
+        if (!hasLocationPermission()) {
+            Timber.tag(TAG).e(
+                "PERMISSION DENIED | FINE/COARSE location not granted — a location-type FGS cannot " +
+                "be promoted on API 34+. Stopping self; the permission wizard must re-grant."
+            )
+            stopSelf()
+            return false
+        }
+        if (!hasBackgroundLocationPermission()) {
+            // Not fatal for a foreground (app-open) session, but locked-screen collection will be
+            // withheld by the OS. Logged loudly so a silent overnight gap is diagnosable.
+            Timber.tag(TAG).w(
+                "BACKGROUND LOCATION MISSING | 'Allow all the time' not granted — fixes will stop " +
+                "when the app leaves the foreground. Onboarding wizard enforces this grant."
+            )
+        }
+
+        return try {
             ServiceCompat.startForeground(
                 this,
                 LocationNotificationManager.NOTIFICATION_ID_SERVICE,
                 locationNotificationManager.buildServiceNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             )
+            foregroundPromoted = true
             LocationServiceState.setRunning(true)
             Timber.tag(TAG).d("Foreground service promoted successfully")
-            val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(gpsStateReceiver, filter, RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(gpsStateReceiver, filter)
-            }
-            Timber.tag(TAG).d("GPS state receiver registered")
+            true
         } catch (e: SecurityException) {
-            // API 34+: starting an FGS of type location while FINE/COARSE is not granted.
+            // API 34+: location permission revoked between our check and the promotion.
             Timber.tag(TAG).e(e, "Cannot start FGS — location permission missing")
             stopSelf()
+            false
         } catch (e: IllegalStateException) {
             // API 31+: ForegroundServiceStartNotAllowedException (background start without an
             // active exemption) and the API 34 typed-FGS exceptions (Missing/Invalid
@@ -191,17 +242,22 @@ class LocationForegroundService : android.app.Service() {
             // next exact alarm will retry once the exemption is available.
             Timber.tag(TAG).e(e, "Cannot start FGS — background-start not allowed / invalid service type")
             stopSelf()
+            false
         } catch (e: Exception) {
             // Last-resort guard: any other failure during foreground promotion must not crash a
             // background-started service. Stop and let the recovery layers (watchdog / exact alarm)
             // bring collection back when conditions allow.
             Timber.tag(TAG).e(e, "Unexpected failure promoting foreground service — stopping cleanly")
             stopSelf()
+            false
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Timber.tag(TAG).d("onStartCommand action=${intent?.action ?: "null (Android restart)"}")
+        // Re-assert foreground state (no-op when already promoted). Covers the START_STICKY
+        // null-intent restart and any path where onCreate's promotion was skipped.
+        if (!promoteToForeground()) return START_NOT_STICKY
         when (intent?.action) {
             ACTION_STOP -> {
                 Timber.tag(TAG).d("Stop action received — shutting down")
@@ -229,6 +285,16 @@ class LocationForegroundService : android.app.Service() {
                 return@launch
             }
             Timber.tag(TAG).i("USER SESSION LOADED | Auth token present — location collection pipeline starting")
+
+            // Runtime-permission re-verification INSIDE the execution block (API 34 requirement):
+            // a revocation while the service was scheduled would otherwise surface as a silent
+            // OS kill. Without FINE/COARSE no fix can ever be delivered, so idling here would only
+            // burn the wake lock — stop immediately; the alarm/watchdog retry after re-grant.
+            if (!hasLocationPermission()) {
+                Timber.tag(TAG).e("PERMISSION DENIED | Location permission revoked — stopping service")
+                stopSelf()
+                return@launch
+            }
 
             // Warn loudly if battery optimization is still enabled. On many OEMs (Xiaomi,
             // Samsung, Realme, OPPO) this causes the service to be killed within seconds of
@@ -268,11 +334,14 @@ class LocationForegroundService : android.app.Service() {
 
                 if (locationScheduler.isInTrackingWindow(startTime, endTime)) {
                     Timber.tag(TAG).i("TRACKING WINDOW ACTIVE | Inside window $startTime–$endTime — ensuring GPS updates")
-                    startContinuousUpdates(intervalMs)
-                    // Keep the CPU awake for the duration of collection. Refreshed every loop tick
-                    // (<= WINDOW_POLL_INTERVAL_MS) so a long window stays covered; the WAKELOCK_TIMEOUT_MS
-                    // safety net guarantees it is dropped if the service is ever killed mid-window.
+                    // Pin the CPU BEFORE registering for fixes: offline overnight there is no A-GPS,
+                    // so the hardware GPS cold start takes 10–45 s — if the CPU is allowed to sleep
+                    // in that gap the chip never finishes warming up and zero fixes are delivered.
+                    // Refreshed every loop tick (<= WINDOW_POLL_INTERVAL_MS) so a long window stays
+                    // covered; the WAKELOCK_TIMEOUT_MS safety net guarantees it is dropped if the
+                    // service is ever killed mid-window.
                     acquireOrRefreshWakeLock()
+                    startContinuousUpdates(intervalMs)
 
                     // Sleep until the window closes or until we need to re-read config —
                     // whichever comes first. This lets a backend interval change take effect
@@ -280,22 +349,31 @@ class LocationForegroundService : android.app.Service() {
                     val windowRemainingMs = locationScheduler.millisUntilWindowEnd(endTime)
                     delay(minOf(WINDOW_POLL_INTERVAL_MS, windowRemainingMs).coerceAtLeast(5_000L))
                 } else {
-                    if (locationUpdatesActive) {
-                        Timber.tag(TAG).d("OUTSIDE WINDOW | Stopping continuous location updates")
-                        stopContinuousUpdates()
-                    }
-                    // Release the CPU outside the window — no need to keep the device awake while we
-                    // sleep until the next window opens. Keeps battery cost scoped to collection only.
-                    releaseWakeLock()
-                    val waitMs = locationScheduler.millisUntilWindowStart(startTime)
-                    Timber.tag(TAG).d(
-                        "OUTSIDE WINDOW | window=$startTime–$endTime | now=$currentTime | " +
-                        "sleeping ${waitMs / 60_000L} min until next window"
+                    // Graceful self-termination: the cached window has closed (or we were started
+                    // outside it). Clear GPS updates, drop every wake lock, arm tomorrow's exact
+                    // alarm from the CACHED config (offline-safe — DataStore only), enqueue an
+                    // upload drain for whenever network returns, and stop. The exact alarm — not a
+                    // sleeping service — owns reopening the window; an idle FGS would only cost
+                    // battery and invite OEM kills that desync LocationServiceState.
+                    Timber.tag(TAG).i(
+                        "WINDOW CLOSED | window=$startTime–$endTime | now=$currentTime — " +
+                        "graceful shutdown; exact alarm owns the next window start"
                     )
-                    delay(waitMs.coerceAtLeast(60_000L))
-                    // Refresh config right before the window opens so we never enter a new
-                    // tracking session with stale start/end/interval values.
-                    refreshConfigFromApi()
+                    stopContinuousUpdates()
+                    releaseWakeLock()
+                    AlarmHandoffWakeLock.release()
+                    // Belt-and-braces re-arm: TrackingAlarmReceiver already re-armed after firing,
+                    // but a manual / watchdog / app-open start has no alarm guaranteed yet.
+                    runCatching { trackingAlarmScheduler.scheduleNextWindowStart() }
+                        .onFailure { Timber.tag(TAG).e(it, "Failed to arm next window before shutdown") }
+                    // Deferred upload: points collected this window that have not been sent yet are
+                    // drained by this one-time worker as soon as connectivity exists — uploads never
+                    // require the collection service to be alive.
+                    runCatching {
+                        LocationUploadWorker.scheduleOneTime(WorkManager.getInstance(applicationContext))
+                    }
+                    stopSelf()
+                    return@launch
                 }
             }
             stopContinuousUpdates()
@@ -320,8 +398,19 @@ class LocationForegroundService : android.app.Service() {
             Timber.tag(TAG).d("Restarting location updates with new interval ${intervalMs / 1000}s")
         }
 
+        // Configured for aggressive OFFLINE acquisition: PRIORITY_HIGH_ACCURACY forces the hardware
+        // GPS chip (network/cell providers have nothing to offer with no internet), a definitive
+        // interval drives delivery by TIME so a stationary phone on a desk still produces points,
+        // and batching is explicitly disabled so fixes are not held back until a flush that Doze
+        // may never grant.
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs / 2)
+            // Time-driven, not movement-driven: any displacement filter (> 0 m) suppresses every
+            // fix from a phone lying still — which overnight is the NORMAL case.
+            .setMinUpdateDistanceMeters(0f)
+            // No batching: deliver each fix as it is computed instead of queueing for a deferred
+            // flush the device may sleep through.
+            .setMaxUpdateDelayMillis(0L)
             // Do not block for a high-accuracy fix — accept whatever the provider has.
             // When GPS warms up, accuracy improves automatically on subsequent fixes.
             .setWaitForAccurateLocation(false)
@@ -371,6 +460,11 @@ class LocationForegroundService : android.app.Service() {
         try {
             wl.acquire(WAKELOCK_TIMEOUT_MS)
             Timber.tag(TAG).d("WAKELOCK HELD | CPU kept awake for in-window collection (timeout refreshed)")
+            // NOTE: the alarm→service hand-off lock is deliberately NOT released here. It stays
+            // held until the FIRST fix is persisted to Room (see saveLocationFromCallback) or its
+            // 60 s hard timeout — releasing it merely because our own lock was acquired proved
+            // fragile: if this acquire ever throws, the CPU is dropped mid-GPS-cold-start and the
+            // offline window collects nothing.
         } catch (e: Exception) {
             // WAKE_LOCK permission missing or OEM restriction — collection continues best-effort.
             Timber.tag(TAG).e(e, "Could not acquire collection wake lock — Doze may throttle fixes")
@@ -421,8 +515,8 @@ class LocationForegroundService : android.app.Service() {
         locationConfigRepository.getLocationConfig()
             .onSuccess { config ->
                 Timber.tag(TAG).i(
-                    "%snull", "TRACKING WINDOW UPDATED | API success — " +
-                    "window=${config.trackingStartTime}–${config.trackingEndTime} "
+                    "TRACKING WINDOW UPDATED | API success — " +
+                    "window=${config.trackingStartTime}–${config.trackingEndTime}"
                 )
             }
             .onFailure { err ->
@@ -462,7 +556,7 @@ class LocationForegroundService : android.app.Service() {
             Instant.ofEpochMilli(collectionTimeMs), ZoneId.systemDefault()
         ).format(timestampFormatter)
 
-        locationRepository.saveLocation(
+        val persisted = locationRepository.saveLocation(
             LocationRecord(
                 userId = userId,
                 latitude = location.latitude,
@@ -472,11 +566,28 @@ class LocationForegroundService : android.app.Service() {
                 createdAt = collectionTimeMs
             )
         )
+        if (!persisted) {
+            // Keep the hand-off lock held (its 60 s hard timeout is the ceiling) so the CPU stays
+            // up for the next fix attempt instead of sleeping on a failed first write.
+            Timber.tag(TAG).w("DB WRITE FAILED | Location not persisted — hand-off lock kept for retry")
+            return
+        }
         locationPrefs.saveLastLocationCollectionTime(collectionTimeMs)
         Timber.tag(TAG).i(
             "LOCATION SAVED LOCALLY | userId=$userId | lat=${location.latitude} lon=${location.longitude} " +
             "| distance=${distance.toInt()}m | collectedAt=$collectionTimestamp"
         )
+        if (!firstFixPersisted) {
+            firstFixPersisted = true
+            // Hand-off contract fulfilled: the first valid coordinate of this run is durably in
+            // Room, so the alarm→service hand-off lock can finally be released. From here the
+            // sustained collection lock (refreshed every loop tick) keeps the CPU alive for the
+            // rest of the window. No-op for non-alarm starts (the lock was never acquired).
+            AlarmHandoffWakeLock.release()
+            Timber.tag(TAG).i(
+                "FIRST FIX PERSISTED | GPS warm-up complete — alarm hand-off wake lock released"
+            )
+        }
     }
 
     private fun isGpsEnabled(): Boolean {
@@ -488,6 +599,10 @@ class LocationForegroundService : android.app.Service() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasBackgroundLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
     private fun stopTracking() {
@@ -502,6 +617,10 @@ class LocationForegroundService : android.app.Service() {
 
     override fun onDestroy() {
         Timber.tag(TAG).d("onDestroy — service stopping")
+        // Covers the paths where the service was started by the alarm but stopped before reaching the
+        // collection loop (FGS promotion failed, missing token, manual stop) — release the hand-off
+        // lock here instead of waiting out its timeout.
+        AlarmHandoffWakeLock.release()
         runCatching { unregisterReceiver(gpsStateReceiver) }
         stopTracking()
         serviceScope.cancel()

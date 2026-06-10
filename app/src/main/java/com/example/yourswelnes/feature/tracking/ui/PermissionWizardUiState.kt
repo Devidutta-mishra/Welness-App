@@ -28,6 +28,10 @@ data class WizardStep(
     val title: String,
     val bodyText: String,
     val noteText: String? = null,
+    // Ordered, device-tailored "do this in Settings" guidance, rendered as a numbered list under
+    // the body. Populated only for the consolidated OEM step (from OEMInstructionProvider); empty
+    // for the verifiable Android permission steps, which need no manual instructions.
+    val numberedSteps: List<String> = emptyList(),
     val primaryButtonLabel: String,
     val isMandatory: Boolean,
     val isGranted: Boolean = false,
