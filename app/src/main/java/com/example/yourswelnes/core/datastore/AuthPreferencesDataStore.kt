@@ -50,6 +50,13 @@ class AuthPreferencesDataStore @Inject constructor(
     /** Blocking-safe single read of the token for the OkHttp Authorization interceptor. */
     suspend fun getToken(): String? = dataStore.data.firstOrNull()?.get(KEY_TOKEN)
 
+    /**
+     * The active user's stable server id. Used to scope the tracking-window alarm's PendingIntent
+     * request code so one user's alarm can never overwrite or cancel another's on the same device.
+     * Returns null when no session exists (already logged out).
+     */
+    suspend fun getUserId(): String? = dataStore.data.firstOrNull()?.get(KEY_USER_ID)
+
     suspend fun saveAuthData(token: String, user: AuthUser) {
         dataStore.edit { prefs ->
             prefs[KEY_TOKEN] = token

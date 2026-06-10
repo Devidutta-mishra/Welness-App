@@ -2,7 +2,6 @@ package com.example.yourswelnes.feature.monitoring.data
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.database.dao.AppMonitoringDao
 import com.example.yourswelnes.core.database.entity.AppMonitoringEntity
@@ -38,16 +37,27 @@ class AppMonitoringRepositoryImpl @Inject constructor(
             return@runCatching
         }
 
-        // 2. For each app, extract package name and check PackageManager
+        // 2. Resolve each backend app id to its explicitly declared package and check it.
+        //    Post-QUERY_ALL_PACKAGES-removal, only packages listed in the manifest <queries>
+        //    block are visible — an undeclared package ALWAYS reports "not installed" — so the
+        //    id→package mapping is a static allowlist instead of being parsed from the download
+        //    link. Ids missing from the map are reported not-installed and logged loudly so a
+        //    backend-side addition can't silently produce false data.
         val current = appDtos.map { dto ->
-            val packageName = extractPackageName(dto.downloadLink)
-            val isInstalled = packageName != null && isPackageInstalled(packageName)
+            val packageName = KNOWN_APP_PACKAGES[dto.id]
+            if (packageName == null) {
+                Timber.w(
+                    "App id=%d (%s) has no declared package mapping — reporting not installed. " +
+                    "Add it to KNOWN_APP_PACKAGES and the manifest <queries> block.",
+                    dto.id, dto.appName
+                )
+            }
             AppStatus(
                 appId = dto.id,
                 appName = dto.appName,
                 downloadLink = dto.downloadLink,
                 packageName = packageName,
-                isInstalled = isInstalled
+                isInstalled = packageName != null && isPackageInstalled(packageName)
             )
         }
 
@@ -84,9 +94,7 @@ class AppMonitoringRepositoryImpl @Inject constructor(
         appMonitoringDao.replaceAll(current.map { it.toEntity() })
     }.onFailure { Timber.e(it, "AppMonitoringRepository.syncApps failed") }
 
-    private fun extractPackageName(downloadLink: String): String? =
-        runCatching { Uri.parse(downloadLink).getQueryParameter("id") }.getOrNull()
-
+    /** Visibility-filtered existence check — only succeeds for packages declared in <queries>. */
     private fun isPackageInstalled(packageName: String): Boolean =
         try {
             context.packageManager.getPackageInfo(packageName, 0)
@@ -94,6 +102,19 @@ class AppMonitoringRepositoryImpl @Inject constructor(
         } catch (_: PackageManager.NameNotFoundException) {
             false
         }
+
+    private companion object {
+        /**
+         * Backend app id → Android package, for every app the backend may ask us to monitor.
+         * MUST stay in lockstep with the manifest <queries> block: a package missing there is
+         * invisible to [isPackageInstalled] (Android 11+ package-visibility filtering) and would
+         * silently report "not installed" on every device.
+         */
+        val KNOWN_APP_PACKAGES = mapOf(
+            1 to "org.telegram.messenger",
+            2 to "us.zoom.videomeetings"
+        )
+    }
 }
 
 private fun AppMonitoringEntity.toDomain() = AppStatus(

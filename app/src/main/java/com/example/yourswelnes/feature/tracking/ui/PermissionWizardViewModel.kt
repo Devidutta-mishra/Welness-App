@@ -1,11 +1,16 @@
 package com.example.yourswelnes.feature.tracking.ui
 
 import android.content.Context
-import android.os.Build
 import com.example.yourswelnes.core.datastore.PermissionOnboardingDataStore
 import com.example.yourswelnes.core.permission.BatteryOptimizationManager
 import com.example.yourswelnes.core.permission.PermissionChecker
+import com.example.yourswelnes.core.tracking.OEMInstructionProvider
+import com.example.yourswelnes.core.tracking.OemSetupStep
+import com.example.yourswelnes.core.tracking.appDetailsIntent
 import com.example.yourswelnes.core.tracking.detectOemProfile
+import com.example.yourswelnes.core.tracking.launchOemIntent
+import com.example.yourswelnes.core.tracking.oemBackgroundIntents
+import com.example.yourswelnes.core.tracking.resolvesAnyActivity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -241,15 +246,16 @@ class PermissionWizardViewModel @Inject constructor(
      *                             "I Have Done This" fallback for OEMs whose API lags the toggle
      *  5. Exact Alarms          — verifiable via canScheduleExactAlarms(); needed for the
      *                             Doze-proof window start. Manual fallback → inexact alarm if declined
-     *  6. OEM steps             — recommended only; Android cannot verify them, so they NEVER
-     *                             block. Already-dismissed IDs are excluded so they never reappear.
+     *  6. OEM background step   — ONE consolidated, device-tailored step (recommended only;
+     *                             Android cannot verify it, so it NEVER blocks). Skipped for stock
+     *                             devices, and skipped via Resolve-Before-Show gating when it could
+     *                             only reopen App Info and battery is already exempt (see below).
      *
      * No activity-recognition / step-counter / fitness permission is requested — this app
      * only collects location.
      *
      * Every step reflects the LIVE permission state: only steps for missing items are added,
-     * so a step the user has already satisfied never shows. OEM steps are always included
-     * (when the manufacturer has them) because Android cannot verify them; they are skippable.
+     * so a step the user has already satisfied never shows.
      */
     private fun buildStepList(): List<WizardStep> {
         val hasFine = permissionChecker.hasFineLocation()
@@ -268,26 +274,28 @@ class PermissionWizardViewModel @Inject constructor(
         if (!hasFine) steps += WizardStep(
             id = "fine_location",
             type = WizardStepType.FINE_LOCATION,
-            title = "Location Access",
-            bodyText = "We use your precise GPS location to record club visits and track your " +
-                "sessions accurately. Location is only collected during your club's configured " +
-                "tracking window — never outside of it.",
+            title = "Club Check-in Automation",
+            bodyText = "Verify club presence to automate your attendance logs so you never have to manually check in when arriving for your session.",
             primaryButtonLabel = "Allow Location Access",
             isMandatory = true
         )
 
+        // PROMINENT DISCLOSURE (Google Play background-location policy). The body text below is
+        // compliance-reviewed wording and must keep the literal phrases "collects location data",
+        // "collected", and "even when the app is closed or not in use" — the location-permissions
+        // declaration review checks for exactly these elements appearing BEFORE the runtime
+        // permission request. Do not reword without re-clearing Play compliance.
         if (!hasBg) steps += WizardStep(
             id = "background_location",
             type = WizardStepType.BACKGROUND_LOCATION,
-            title = "Always-On Location",
-            bodyText = "Background location keeps tracking active when you step away from the app " +
-                "or lock your screen. Your location data is encrypted end-to-end and only " +
-                "ever shared with your club.",
-            noteText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                "On the next screen, select \"Allow all the time\" to enable background tracking."
-            else null,
-            primaryButtonLabel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                "Allow All the Time" else "Allow Background Location",
+            title = "Automated Club Check-In",
+            bodyText = "Yours Wellness Center collects location data to automate your attendance " +
+                "logs and verify your presence at the club zone seamlessly. This location data is " +
+                "collected and processed even when the app is closed or not in use. This data is " +
+                "required to ensure your check-ins are recorded accurately without requiring " +
+                "manual intervention.",
+            noteText = "On the next screen, select \"Allow all the time\".",
+            primaryButtonLabel = "Grant Access",
             isMandatory = true
         )
 
@@ -295,58 +303,112 @@ class PermissionWizardViewModel @Inject constructor(
             id = "notification",
             type = WizardStepType.NOTIFICATION,
             title = "Stay Connected",
-            bodyText = "We send real-time updates on your tracking status, attendance summaries, " +
-                "and important messages from your club. You can adjust notification preferences anytime " +
-                "in your device settings.",
+            bodyText = "We send real-time updates on your automated check-in status, attendance summaries, and important messages from your club.",
             primaryButtonLabel = "Enable Notifications",
             isMandatory = true
         )
 
-        // Battery optimization — MANDATORY and verifiable. Always shown until actually exempt;
-        // never excluded by dismissedIds because the user cannot "skip" a mandatory requirement.
+        // Battery optimization — MANDATORY and verifiable.
         if (!isBatteryExempt) steps += WizardStep(
             id = "battery",
             type = WizardStepType.BATTERY_OPTIMIZATION,
-            title = "Prevent Tracking Interruptions",
-            bodyText = "Your device's battery manager may suspend this app when the screen locks, " +
-                "causing missed tracking data. This app needs the battery exemption to track " +
-                "reliably all day — even overnight and while locked.",
-            primaryButtonLabel = "Allow",
+            title = "Uninterrupted Automation",
+            bodyText = "To prevent the Android operating system from pausing your automated check-ins when the phone is locked or deep sleeping.",
+            primaryButtonLabel = "Allow Optimization",
             isMandatory = true
         )
 
-        // Exact alarms — verifiable via canScheduleExactAlarms(). Needed so the tracking window
-        // opens at the precise time through Deep Doze (TrackingAlarmScheduler). On Android 13+
-        // SCHEDULE_EXACT_ALARM is denied by default, so this step appears on most modern devices.
-        // Not a hard Home gate: if the user declines, the scheduler degrades to an inexact Doze
-        // alarm, so a manual "I Have Done This" fallback (revealed after opening settings) lets
-        // them proceed rather than being trapped.
+        // Exact alarms
         if (!permissionChecker.canScheduleExactAlarms()) steps += WizardStep(
             id = "exact_alarm",
             type = WizardStepType.EXACT_ALARM,
-            title = "Precise Tracking Schedule",
-            bodyText = "To begin tracking the moment your club's window opens — even after your " +
-                "phone has been locked and idle overnight — this app needs permission to schedule " +
-                "exact alarms. Without it, tracking may start a few minutes late.",
+            title = "Scheduled Hours",
+            bodyText = "To begin validating your presence the moment your active booking window opens, this app needs permission to schedule precise automation tasks.",
             noteText = "On the next screen, turn on \"Allow setting alarms and reminders\".",
-            primaryButtonLabel = "Allow Exact Alarms",
+            primaryButtonLabel = "Allow Precise Timing",
             isMandatory = true
         )
 
-        // OEM steps — recommended guidance only, always shown (Android cannot verify them).
-        // Step IDs use the manufacturer name to stay stable across app updates.
-        oemProfile.steps.forEachIndexed { i, oemStep ->
-            steps += WizardStep(
-                id = "oem_${oemProfile.manufacturer.name.lowercase()}_$i",
-                type = WizardStepType.OEM_STEP,
-                title = oemStep.title,
-                bodyText = oemStep.description,
-                primaryButtonLabel = if (!oemStep.isManual) oemStep.actionLabel else "I've Done This",
-                isMandatory = false,
-                oemStep = oemStep
+        // OEM background-activity step — ONE consolidated, device-tailored step (recommended only,
+        // Android cannot verify it). This replaces the old per-OEM chain that could send the user
+        // to the App Info page multiple times. Three rules from the onboarding audit apply:
+        //
+        //  • Stock families (Pixel / Motorola / Nothing / AOSP) return hasGuidance=false → no step.
+        //    The mandatory battery-optimization exemption above already covers them cleanly.
+        //
+        //  • Resolve-Before-Show gating (Strategy A): probe whether ANY proprietary OEM screen
+        //    (auto-start / vendor battery manager) actually resolves on this device. If none do,
+        //    the step could only reopen the generic App Info page — so if battery optimization is
+        //    ALREADY exempt, the step is pure redundancy and is skipped.
+        //
+        //  • Keep genuine auto-start (Strategy B): if a proprietary screen resolves, the step is
+        //    kept regardless of battery state, because that auto-start registry is a separate
+        //    system that cannot be verified through any standard Android API.
+        val oemInstructions = OEMInstructionProvider.forManufacturer(oemProfile.manufacturer)
+        if (oemInstructions.hasGuidance) {
+            val backgroundIntents = oemBackgroundIntents(oemProfile.manufacturer, context.packageName)
+            val hasRealOemScreen = context.resolvesAnyActivity(backgroundIntents)
+            val show = shouldShowOemStep(
+                hasGuidance = true,
+                hasRealOemScreen = hasRealOemScreen,
+                isBatteryExempt = isBatteryExempt
             )
+
+            Timber.tag("PermWizard").i(
+                "OEM STEP | ${oemProfile.displayName} realScreen=$hasRealOemScreen " +
+                "batteryExempt=$isBatteryExempt → ${if (show) "SHOW" else "SKIP"}"
+            )
+
+            if (show) {
+                steps += WizardStep(
+                    // Stable ID (no per-substep index) so the consolidated step is addressed once.
+                    id = "oem_${oemProfile.manufacturer.name.lowercase()}",
+                    type = WizardStepType.OEM_STEP,
+                    title = oemInstructions.title,
+                    bodyText = oemInstructions.whyText,
+                    numberedSteps = oemInstructions.steps,
+                    primaryButtonLabel = "Configure Settings",
+                    isMandatory = false,
+                    oemStep = OemSetupStep(
+                        title = oemInstructions.title,
+                        description = oemInstructions.whyText,
+                        actionLabel = "Configure Settings",
+                        isManual = false,
+                        // Safety fallback (Strategy 3): launchOemIntent tries each proprietary OEM
+                        // screen in order, catching ActivityNotFoundException AND SecurityException,
+                        // and lands on App Info exactly once if every proprietary screen fails —
+                        // never a dead end.
+                        launchAction = { ctx ->
+                            ctx.launchOemIntent(
+                                *backgroundIntents.toTypedArray(),
+                                fallback = appDetailsIntent(ctx, ctx.packageName)
+                            )
+                        }
+                    )
+                )
+            }
         }
 
         return steps
+    }
+
+    companion object {
+        /**
+         * Resolve-Before-Show gating decision for the consolidated OEM step. Extracted as a pure,
+         * side-effect-free function so it is unit-testable without Android statics (Build,
+         * PackageManager). Encodes all three audit rules in one place:
+         *
+         *  • [hasGuidance] == false → stock device (Pixel/Motorola/Nothing/AOSP): never show.
+         *  • [hasRealOemScreen] == false && [isBatteryExempt] == true → the step could only reopen
+         *    the generic App Info page and battery optimization is already handled: redundant,
+         *    so skip (Strategy A).
+         *  • [hasRealOemScreen] == true → a genuine auto-start / vendor battery screen exists and
+         *    cannot be verified by any API: always show, regardless of battery state (Strategy B).
+         */
+        internal fun shouldShowOemStep(
+            hasGuidance: Boolean,
+            hasRealOemScreen: Boolean,
+            isBatteryExempt: Boolean
+        ): Boolean = hasGuidance && !(!hasRealOemScreen && isBatteryExempt)
     }
 }

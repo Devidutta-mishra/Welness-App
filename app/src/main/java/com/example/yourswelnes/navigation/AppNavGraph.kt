@@ -270,8 +270,7 @@ fun AppNavGraph(navController: NavHostController) {
                 onCameraWithGroup = { groupId -> navController.navigate(Destinations.camera(groupId)) },
                 onNotificationsClick = { navController.navigate(Destinations.NOTIFICATIONS) },
                 onLogoutClick = viewModel::onLogoutClicked,
-                onDashboardClick = viewModel::openDashboard,
-                onTrackingSetupClick = { navController.navigate(Destinations.TRACKING_SETUP) }
+                onDashboardClick = viewModel::openDashboard
             )
         }
 

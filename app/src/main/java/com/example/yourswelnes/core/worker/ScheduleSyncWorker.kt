@@ -10,6 +10,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.feature.location.data.LocationConfigRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -25,12 +26,19 @@ import timber.log.Timber
 class ScheduleSyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val locationConfigRepository: LocationConfigRepository
+    private val locationConfigRepository: LocationConfigRepository,
+    private val trackingAlarmScheduler: TrackingAlarmScheduler
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         Timber.tag(TAG).i("WORKER STARTED | ScheduleSyncWorker — fetching latest tracking schedule")
         locationConfigRepository.getLocationConfig()
+        // While the app is backgrounded, this periodic sync is the ONLY path that picks up a
+        // server-side window change. Re-arm (or immediately start, if the new window is already
+        // open) from the just-synced config so a dynamic update takes effect today, not on the
+        // next cold launch. evaluateAndApply() reads cached config only and self-gates background
+        // FGS-start restrictions, so it is safe to run from this worker.
+        trackingAlarmScheduler.evaluateAndApply()
         Timber.tag(TAG).i("WORKER EXECUTED | ScheduleSyncWorker — schedule sync complete")
         // Always returns success so WorkManager does not apply backoff unnecessarily —
         // the next periodic run will retry. Logging / caching done inside getLocationConfig().

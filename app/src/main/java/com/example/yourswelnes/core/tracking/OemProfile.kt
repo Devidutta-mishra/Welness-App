@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -29,14 +30,14 @@ data class OemProfile(
     val steps: List<OemSetupStep>
 )
 
-fun detectOemProfile(packageName: String): OemProfile {
+/**
+ * Maps [Build.MANUFACTURER] / [Build.BRAND] to a known [OemManufacturer]. Shared by
+ * [detectOemProfile] and [OEMInstructionProvider] so device detection lives in exactly one place.
+ */
+fun detectOemManufacturer(): OemManufacturer {
     val rawManufacturer = Build.MANUFACTURER.lowercase().trim()
     val rawBrand = Build.BRAND.lowercase().trim()
-    Timber.tag(TAG).i(
-        "OEM DETECTED | manufacturer='$rawManufacturer' brand='$rawBrand' model='${Build.MODEL}'"
-    )
-
-    val manufacturer = when {
+    return when {
         rawManufacturer == "google" -> OemManufacturer.GOOGLE
         rawManufacturer == "samsung" -> OemManufacturer.SAMSUNG
         rawManufacturer.contains("xiaomi") || rawBrand.contains("xiaomi") ||
@@ -49,6 +50,14 @@ fun detectOemProfile(packageName: String): OemProfile {
         rawManufacturer.contains("nothing") -> OemManufacturer.NOTHING
         else -> OemManufacturer.GENERIC
     }
+}
+
+fun detectOemProfile(packageName: String): OemProfile {
+    Timber.tag(TAG).i(
+        "OEM DETECTED | manufacturer='${Build.MANUFACTURER}' brand='${Build.BRAND}' model='${Build.MODEL}'"
+    )
+
+    val manufacturer = detectOemManufacturer()
 
     val displayName = when (manufacturer) {
         OemManufacturer.XIAOMI  -> "Xiaomi / Redmi / POCO"
@@ -309,7 +318,7 @@ private fun buildOemSteps(
     else -> emptyList()
 }
 
-private fun appDetailsIntent(ctx: Context, packageName: String) =
+internal fun appDetailsIntent(ctx: Context, packageName: String) =
     Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
@@ -340,3 +349,72 @@ fun openBatteryOptimizationSettings(ctx: Context, packageName: String) {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     )
 }
+
+private fun oemComponent(pkg: String, cls: String): Intent =
+    Intent().setComponent(ComponentName(pkg, cls))
+
+/**
+ * Ordered list of the PROPRIETARY OEM auto-start / background screens for [manufacturer], newest
+ * component first. Deliberately EXCLUDES the generic App Info page — callers append that as the
+ * final fallback via [launchOemIntent].
+ *
+ * Two callers, one source of truth:
+ *  1. The consolidated wizard OEM step launches `launchOemIntent(*these, fallback = appDetails)`,
+ *     so a real OEM screen is preferred and App Info is only the last resort.
+ *  2. [resolvesAnyActivity] probes this list to answer "does a real OEM screen exist on THIS
+ *     device?". If none resolve, the step could only open App Info — see the Resolve-Before-Show
+ *     gating in PermissionWizardViewModel.buildStepList.
+ *
+ * Component names mirror those used in [buildOemSteps] (which still backs the standalone
+ * TrackingSetupScreen); keep the two in sync if a vendor moves a screen between OS versions.
+ */
+internal fun oemBackgroundIntents(manufacturer: OemManufacturer, packageName: String): List<Intent> =
+    when (manufacturer) {
+        OemManufacturer.XIAOMI -> listOf(
+            oemComponent("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+            Intent("miui.intent.action.APP_PERM_EDITOR")
+                .setClassName("com.miui.securitycenter", "com.miui.permcenter.appdetail.AppDetailActivity")
+                .putExtra("extra_pkgname", packageName)
+        )
+        OemManufacturer.VIVO -> listOf(
+            oemComponent("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"),
+            oemComponent("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"),
+            oemComponent("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"),
+            oemComponent("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.PurviewTabActivity")
+        )
+        OemManufacturer.OPPO -> listOf(
+            oemComponent("com.coloros.safeguard", "com.coloros.safeguard.autostart.StartupAppListActivity"),
+            oemComponent("com.coloros.oppoguardelf", "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity")
+        )
+        OemManufacturer.REALME -> listOf(
+            oemComponent("com.coloros.safeguard", "com.coloros.safeguard.autostart.StartupAppListActivity")
+        )
+        OemManufacturer.ONEPLUS -> listOf(
+            oemComponent("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity")
+        )
+        OemManufacturer.SAMSUNG -> listOf(
+            oemComponent("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity")
+        )
+        // Pixel / Motorola / Nothing / generic AOSP have no proprietary background registry.
+        else -> emptyList()
+    }
+
+/**
+ * True if at least one of [intents] resolves to an installed activity on this device.
+ *
+ * Used as the Resolve-Before-Show probe: every OEM settings package is declared in the manifest
+ * <queries> block (QUERY_ALL_PACKAGES was removed for Play-policy compliance), so an
+ * explicit-component intent to an OEM settings activity resolves only when that screen actually
+ * exists on the current ROM. When every probe returns null the wizard knows the OEM step could do
+ * nothing but reopen the generic App Info page. Adding a new OEM component above requires its
+ * package to be added to the manifest <queries> block too, or it will never resolve.
+ */
+internal fun Context.resolvesAnyActivity(intents: List<Intent>): Boolean =
+    intents.any { intent ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(0L)) != null
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.resolveActivity(intent, 0) != null
+        }
+    }

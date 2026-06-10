@@ -362,6 +362,64 @@ private fun WizardStepContent(step: WizardStep) {
                 }
             }
         }
+
+        // Device-tailored numbered guidance (OEM step). Left-aligned in a card so the user can
+        // follow it step-by-step against the OEM settings screen the button opens.
+        if (step.numberedSteps.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Follow these steps",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    step.numberedSteps.forEachIndexed { index, line ->
+                        NumberedStepRow(number = index + 1, text = line)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NumberedStepRow(number: Int, text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = number.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -409,7 +467,7 @@ private fun WizardActionButtons(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "I Have Done This",
+                        text = "Complete Setup",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -419,7 +477,7 @@ private fun WizardActionButtons(
             // ── Manual OEM step (e.g. "Lock app in Recents") — confirm only ────────
             isManualOemStep -> {
                 WizardPrimaryButton(
-                    label = "I Have Done This",
+                    label = "Complete Setup",
                     icon = Icons.Filled.CheckCircle,
                     onClick = onConfirm
                 )
@@ -460,7 +518,7 @@ private fun WizardActionButtons(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "I Have Done This",
+                            text = "Complete Setup",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )

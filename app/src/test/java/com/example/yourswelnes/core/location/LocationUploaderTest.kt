@@ -45,8 +45,9 @@ class LocationUploaderTest {
         val rows = mutableListOf<LocationRecord>()
         private var nextId = 1L
 
-        override suspend fun saveLocation(record: LocationRecord) {
+        override suspend fun saveLocation(record: LocationRecord): Boolean {
             rows += record.copy(id = nextId++)
+            return true
         }
 
         override suspend fun getPendingLocations(userId: String, limit: Int): List<LocationRecord> =

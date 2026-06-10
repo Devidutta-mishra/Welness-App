@@ -3,8 +3,8 @@ package com.example.yourswelnes.core.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import com.example.yourswelnes.core.location.AlarmHandoffWakeLock
 import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.core.service.LocationForegroundService
 import dagger.hilt.EntryPoint
@@ -33,19 +33,22 @@ interface TrackingAlarmEntryPoint {
  * Fires when the exact tracking-window alarm goes off (armed by [TrackingAlarmScheduler]).
  *
  * Doze-survival handoff sequence:
- *   1. Acquire a PARTIAL_WAKE_LOCK so the CPU cannot fall back to sleep before the foreground
- *      service has had a chance to call startForeground(). Without this the device can re-enter
- *      Doze in the gap between this broadcast returning and the service starting, and the start is
- *      silently dropped.
+ *   1. Acquire the shared [AlarmHandoffWakeLock] so the CPU cannot fall back to sleep before the
+ *      foreground service has called startForeground() AND acquired its own sustained collection
+ *      lock. Without this the device can re-enter Doze in the gap between this broadcast returning
+ *      and the service start, and the start is silently dropped.
  *   2. startForegroundService() → [LocationForegroundService] promotes itself with
  *      FOREGROUND_SERVICE_TYPE_LOCATION, the only mode exempt from background-location limits, and
  *      begins polling FusedLocationProviderClient.
  *   3. Re-arm the alarm for tomorrow (exact alarms are one-shot) from the cached config — works
  *      entirely offline; no network is touched on this path.
- *   4. Release the wake lock.
+ *   4. The SERVICE — not this receiver — releases the hand-off lock once the FIRST GPS coordinate
+ *      has been persisted to Room, so the CPU is held through the full offline GPS cold start
+ *      (10–45 s with no A-GPS). If the service never comes up (FGS blocked), we release it here in
+ *      the catch, and the lock's 60 s hard timeout is the final net.
  *
- * goAsync() keeps the receiver process alive across the brief suspend re-arm. The wake lock is
- * acquired with a hard timeout so an unexpected crash can never leak it.
+ * goAsync() keeps the receiver process alive across the brief suspend re-arm; the hand-off lock
+ * keeps the CPU awake across it too.
  */
 class TrackingAlarmReceiver : BroadcastReceiver() {
 
@@ -53,14 +56,11 @@ class TrackingAlarmReceiver : BroadcastReceiver() {
         if (intent.action != ACTION_WINDOW_START) return
         Timber.tag(TAG).i("EXACT ALARM FIRED | Tracking window opening — waking collection pipeline")
 
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
-            setReferenceCounted(false)
-            // Hard timeout safety net — we release explicitly below, but this guarantees the lock
-            // is never leaked even if the handoff throws.
-            acquire(WAKE_LOCK_TIMEOUT_MS)
-        }
-        Timber.tag(TAG).d("WAKELOCK ACQUIRED | CPU held for service handoff")
+        // Hold the CPU awake BEFORE starting the service. The OS keeps the CPU up only for the
+        // duration of onReceive(); the service releases this lock once its own collection lock has
+        // taken over, so the CPU is never dropped during the alarm→service start. A hard timeout in
+        // AlarmHandoffWakeLock guarantees it can never leak if the service never comes up.
+        AlarmHandoffWakeLock.acquire(context)
 
         // Start the existing collection service. It re-checks auth token, permission, club, and
         // window itself and stops if there's nothing to do, so we don't duplicate those gates here.
@@ -71,15 +71,18 @@ class TrackingAlarmReceiver : BroadcastReceiver() {
             Timber.tag(TAG).i("SERVICE HANDOFF | startForegroundService dispatched from alarm")
         } catch (e: Exception) {
             // ForegroundServiceStartNotAllowedException (Android 12+) when battery optimisation is
-            // still enabled. Onboarding enforces the exemption; log so it's diagnosable in the field.
+            // still enabled. No service is coming, so release the hand-off lock now rather than
+            // pinning the CPU until the timeout. Onboarding enforces the exemption.
             Timber.tag(TAG).e(
                 e,
-                "SERVICE HANDOFF FAILED | Could not start FGS from alarm — battery exemption required"
+                "SERVICE HANDOFF FAILED | Could not start FGS from alarm — releasing hand-off lock"
             )
+            AlarmHandoffWakeLock.release()
         }
 
-        // Re-arm tomorrow's alarm, then release the lock. goAsync() keeps the process alive for the
-        // brief DataStore read that scheduleNextWindowStart() performs.
+        // Re-arm tomorrow's alarm (exact alarms are one-shot). goAsync() keeps the process alive for
+        // the brief DataStore read; the hand-off lock keeps the CPU awake across it. The lock is NOT
+        // released here — the service owns its release once collection is genuinely under way.
         val scheduler = EntryPointAccessors.fromApplication(
             context.applicationContext, TrackingAlarmEntryPoint::class.java
         ).trackingAlarmScheduler()
@@ -91,8 +94,6 @@ class TrackingAlarmReceiver : BroadcastReceiver() {
             } catch (e: Exception) {
                 Timber.tag(TAG).e(e, "Failed to re-arm next tracking alarm")
             } finally {
-                if (wakeLock.isHeld) wakeLock.release()
-                Timber.tag(TAG).d("WAKELOCK RELEASED | Handoff complete")
                 pendingResult.finish()
             }
         }
@@ -100,8 +101,6 @@ class TrackingAlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "TrackingAlarm"
-        private const val WAKE_LOCK_TAG = "yourswelnes:tracking_alarm_wakelock"
-        private const val WAKE_LOCK_TIMEOUT_MS = 30_000L
         const val ACTION_WINDOW_START = "com.example.yourswelnes.ACTION_TRACKING_WINDOW_START"
     }
 }

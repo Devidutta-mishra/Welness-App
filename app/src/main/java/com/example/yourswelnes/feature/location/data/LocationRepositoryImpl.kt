@@ -15,10 +15,10 @@ class LocationRepositoryImpl @Inject constructor(
     private val locationDao: LocationDao
 ) : LocationRepository {
 
-    override suspend fun saveLocation(record: LocationRecord) {
+    override suspend fun saveLocation(record: LocationRecord): Boolean =
         runCatching { locationDao.insert(record.toEntity()) }
             .onFailure { Timber.e(it, "Failed to save location record") }
-    }
+            .isSuccess
 
     override suspend fun getPendingLocations(userId: String, limit: Int): List<LocationRecord> =
         runCatching { locationDao.getPendingLocations(userId, limit).map { it.toDomain() } }
