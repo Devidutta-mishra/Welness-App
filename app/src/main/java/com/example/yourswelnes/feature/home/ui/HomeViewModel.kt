@@ -116,6 +116,12 @@ class HomeViewModel @Inject constructor(
      *     not executed in [WORKER_STALE_THRESHOLD_MS], WorkManager itself is being killed —
      *     the strongest possible signal that background execution is blocked.
      *
+     *   • Standby bucket restricted: StandbyBucketMonitor observed STANDBY_BUCKET_RESTRICTED on
+     *     a background scheduling pass — the OS is quota-freezing this app's alarms AND jobs, so
+     *     no in-app scheduling can fire on time. Read from DataStore rather than queried live,
+     *     because opening the app promotes it back to ACTIVE and would mask the overnight state;
+     *     the flag self-corrects on the next scheduling pass after the user lifts the restriction.
+     *
      * Both conditions require a non-null history value, so a fresh login (which has never
      * collected or run a worker) never produces a false alarm. When unhealthy, Home shows the
      * "Tracking Needs Attention" card whose [Fix Tracking] action re-opens the OEM setup.
@@ -130,12 +136,14 @@ class HomeViewModel @Inject constructor(
                 (now - lastCollection) > COLLECTION_STALE_THRESHOLD_MS
             val workerStale = lastWorker != null &&
                 (now - lastWorker) > WORKER_STALE_THRESHOLD_MS
+            val standbyRestricted = locationPrefs.isStandbyBucketRestricted()
 
-            val needsAttention = collectionStale || workerStale
+            val needsAttention = collectionStale || workerStale || standbyRestricted
 
             Timber.tag("HomeViewModel").d(
                 "TRACKING HEALTH ${if (needsAttention) "UNHEALTHY" else "HEALTHY"} | " +
                 "collectionStale=$collectionStale workerStale=$workerStale " +
+                "standbyRestricted=$standbyRestricted " +
                 "lastCollection=$lastCollection lastWorker=$lastWorker"
             )
             _uiState.update { it.copy(trackingHealthNeedsAttention = needsAttention) }

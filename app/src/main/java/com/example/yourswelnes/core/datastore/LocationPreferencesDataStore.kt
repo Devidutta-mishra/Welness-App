@@ -1,6 +1,7 @@
 package com.example.yourswelnes.core.datastore
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -110,6 +111,27 @@ class LocationPreferencesDataStore @Inject constructor(
     suspend fun getLastWorkerExecutionTime(): Long? =
         dataStore.data.firstOrNull()?.get(KEY_LAST_WORKER_EXECUTION_TIME)
 
+    /**
+     * Updated by StandbyBucketMonitor on every scheduling pass. A RESTRICTED bucket means the OS
+     * has frozen this app's alarms and jobs at the quota level — the tracking pipeline cannot wake
+     * on time no matter what it schedules, and only the user can lift it from system settings.
+     * Persisted (rather than queried live by the UI) because merely OPENING the app promotes it
+     * back to the ACTIVE bucket — the value observed by the background scheduling paths is the
+     * truthful one, and it self-corrects on the next pass after the user fixes the setting.
+     */
+    suspend fun saveStandbyBucketDiagnostic(bucket: Int, isRestricted: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_LAST_STANDBY_BUCKET] = bucket
+            prefs[KEY_STANDBY_BUCKET_RESTRICTED] = isRestricted
+        }
+    }
+
+    suspend fun getLastStandbyBucket(): Int? =
+        dataStore.data.firstOrNull()?.get(KEY_LAST_STANDBY_BUCKET)
+
+    suspend fun isStandbyBucketRestricted(): Boolean =
+        dataStore.data.firstOrNull()?.get(KEY_STANDBY_BUCKET_RESTRICTED) ?: false
+
     val lastLocationCollectionTime = dataStore.data.map { it[KEY_LAST_LOCATION_COLLECTION_TIME] }
     val lastWorkerExecutionTime    = dataStore.data.map { it[KEY_LAST_WORKER_EXECUTION_TIME] }
 
@@ -128,5 +150,7 @@ class LocationPreferencesDataStore @Inject constructor(
         val KEY_LAST_SCHEDULE_SYNC_TIME = longPreferencesKey("last_schedule_sync_time")
         val KEY_LAST_LOCATION_COLLECTION_TIME = longPreferencesKey("last_location_collection_time")
         val KEY_LAST_WORKER_EXECUTION_TIME = longPreferencesKey("last_worker_execution_time")
+        val KEY_LAST_STANDBY_BUCKET = intPreferencesKey("last_standby_bucket")
+        val KEY_STANDBY_BUCKET_RESTRICTED = booleanPreferencesKey("standby_bucket_restricted")
     }
 }

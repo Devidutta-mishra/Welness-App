@@ -6,11 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.work.WorkManager
 import com.example.yourswelnes.MainActivity
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.core.receiver.TrackingAlarmReceiver
 import com.example.yourswelnes.core.service.LocationForegroundService
+import com.example.yourswelnes.core.tracking.StandbyBucketMonitor
+import com.example.yourswelnes.core.worker.BackupTrackingWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Date
 import javax.inject.Inject
@@ -36,6 +39,14 @@ import timber.log.Timber
  * OEM skins do not defer it. It needs the same SCHEDULE_EXACT_ALARM grant, so when that is revoked
  * we fall back to an inexact Doze-allowed alarm.
  *
+ * ── Swipe-to-kill fail-safe (BackupTrackingWorker) ─────────────────────────────────────────────
+ * The one failure even setAlarmClock cannot survive: OEM skins that treat swipe-from-Recents as a
+ * stop and WIPE the app's pending alarm intents. WorkManager has the opposite resilience profile —
+ * imprecise under Doze (why it is not the primary) but persisted in JobScheduler across exactly
+ * that swipe. So every alarm registration in [armNextWindowStart] is shadowed by a one-shot
+ * [BackupTrackingWorker] aimed at the same instant; it no-ops when the alarm worked and starts the
+ * service identically when the alarm vanished. Cancelled together with the alarm in [cancel].
+ *
  * ── Immediate-evaluation (re-login / dynamic-update fix) ────────────────────────────────────────
  * [evaluateAndApply] is the entry point for app start, successful login, and post-sync. It reads
  * the LIVE cached window and chooses:
@@ -59,7 +70,8 @@ class TrackingAlarmScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val locationPrefs: LocationPreferencesDataStore,
     private val authPrefs: AuthPreferencesDataStore,
-    private val locationScheduler: LocationScheduler
+    private val locationScheduler: LocationScheduler,
+    private val standbyBucketMonitor: StandbyBucketMonitor
 ) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -135,6 +147,12 @@ class TrackingAlarmScheduler @Inject constructor(
      * codes this cancels only this user's alarm and can never touch another user's registration.
      */
     suspend fun cancel() {
+        // The WorkManager backup is app-global (one unique work name, re-armed per session) and
+        // must die with the session — cancelled BEFORE the user-id gate so it is removed even if
+        // the auth record was already cleared. runCatching keeps alarm cancellation unaffected.
+        runCatching { BackupTrackingWorker.cancel(WorkManager.getInstance(context)) }
+            .onFailure { Timber.tag(TAG).w(it, "BACKUP WORKER CANCEL FAILED | continuing with alarm cancel") }
+
         val userId = authPrefs.getUserId()
         if (userId == null) {
             Timber.tag(TAG).w("ALARM CANCEL SKIPPED | No active user id (already cleared?)")
@@ -146,12 +164,35 @@ class TrackingAlarmScheduler @Inject constructor(
 
     // ── Internals ───────────────────────────────────────────────────────────────────────────────
 
-    private fun armNextWindowStart(userId: String, startTime: String) {
+    private suspend fun armNextWindowStart(userId: String, startTime: String) {
         val triggerAtMs = locationScheduler.nextWindowStartEpochMillis(startTime)
         if (triggerAtMs == null) {
             Timber.tag(TAG).w("ALARM SKIPPED | Unparseable start time '$startTime' — not arming")
             return
         }
+
+        // ── Isolated WorkManager fail-safe (BackupTrackingWorker) ──────────────────────────────
+        // Aggressive OEM skins wipe this app's pending ALARM intents (even setAlarmClock) when the
+        // user swipes it away from Recents — but persisted JobScheduler jobs survive that swipe,
+        // because Google's vitals program penalizes OEMs that kill scheduled jobs. So every alarm
+        // registration is shadowed by a one-shot WorkManager request aimed at the same instant.
+        // The worker no-ops when the alarm already started the service. Armed BEFORE the alarm and
+        // wrapped in runCatching, so a WorkManager failure can never break alarm arming and an
+        // alarm failure (including the inexact-fallback paths below) never loses the backup.
+        runCatching {
+            BackupTrackingWorker.schedule(
+                WorkManager.getInstance(context),
+                delayMs = triggerAtMs - System.currentTimeMillis()
+            )
+        }.onFailure {
+            Timber.tag(TAG).e(it, "BACKUP WORKER ARM FAILED | alarm path continues unaffected")
+        }
+
+        // Observation only: record which App Standby bucket the OS has us in at scheduling time.
+        // RESTRICTED means alarms AND jobs are quota-frozen — both wake paths above are locked out
+        // at the kernel level — and the Home health monitor surfaces that to the user. The probe is
+        // fully exception-guarded internally and never blocks scheduling.
+        runCatching { standbyBucketMonitor.checkAndRecord(source = "TrackingAlarmScheduler") }
 
         val operation = buildPendingIntent(userId)
 
