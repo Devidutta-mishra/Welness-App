@@ -13,6 +13,4 @@
 .externalNativeBuild
 .cxx
 local.properties
-.claude/
-*.md
 google-services.json
