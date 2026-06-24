@@ -1,102 +1,51 @@
 # Yourswelnes
 
-Android application for member check-in and field tracking. Built with Kotlin and
-Jetpack Compose, the app provides location tracking (foreground + scheduled background),
-camera capture, push notifications, and offline-first data sync.
+Yourswelnes is an Android app for **reliable field tracking of club members**. It keeps
+members' location updated in the background — even when the app is closed or the device is
+idle — and pairs that with check-in capture, schedules, and push notifications so teams
+always know who is active and where.
 
-## Tech Stack
+The app is built to stay running. It survives reboots, network drops, battery-optimization
+restrictions, and aggressive OEM background limits, syncing data offline-first and uploading
+as soon as connectivity returns.
 
-- **Language:** Kotlin
-- **UI:** Jetpack Compose
-- **Min SDK:** 29 · **Target SDK:** 36 · **Compile SDK:** latest
-- **Build:** Gradle (Kotlin DSL) · Android Gradle Plugin 9.2.1 · Gradle 9.4.1
-- **JDK:** 11
-- **Local storage:** Room
-- **Networking:** Retrofit / OkHttp
-- **Messaging:** Firebase Cloud Messaging
-- **DI:** Hilt
+## What the App Does
 
-Application ID: `com.yourwelnes.yourswelnes`
+- **Background location tracking** — Continuous GPS tracking that runs as a foreground
+  service and keeps reporting even when the app is in the background or shut. Locations are
+  stored locally first and uploaded automatically.
 
-## Project Structure
+- **Reliable, always-on operation** — Restarts itself after device reboot, uses scheduled
+  alarms and watchdog/backup workers to recover if the service is killed, and adapts to
+  device standby and power-saving states so tracking doesn't silently stop overnight.
 
-```
-app/src/main/java/com/example/yourswelnes/
-├── core/          # Services, notifications, receivers, location, networking
-├── di/            # Dependency-injection modules
-├── feature/       # Feature screens (camera, etc.)
-└── navigation/    # Navigation graph and destinations
-```
+- **Offline-first sync** — Location records, notifications, and app data are saved on the
+  device and synced to the server when a connection is available, so nothing is lost when
+  the network is unreliable.
 
-## Prerequisites
+- **Guided permission setup** — A step-by-step setup wizard walks members through the
+  permissions tracking needs (location, background access, exact alarms, battery
+  optimization) with device-specific instructions for popular phone brands.
 
-- Android Studio (latest stable) or the Android command-line tools
-- JDK 11
-- Android SDK with the required platforms installed
+- **Secure access** — Login with token-based authentication and an optional biometric
+  app-lock that protects the app after it's been idle.
 
-## Environment Setup
+- **Camera check-in** — Capture photos in-app and attach them to the relevant group, for
+  on-site verification and reporting.
 
-1. Clone the repository.
-2. Create `local.properties` in the project root (Android Studio creates this
-   automatically). It must point to your Android SDK:
+- **Schedules & club info** — Members can view their club details and group schedules,
+  kept in sync with the server.
 
-   ```properties
-   sdk.dir=/path/to/Android/sdk
-   ```
+- **Push notifications** — Real-time alerts via Firebase Cloud Messaging, with notification
+  history stored on the device and deep links into the right screen.
 
-3. For **release builds**, also add the signing credentials to `local.properties`:
+- **App monitoring** — Reports installed-app information to support compliance and
+  administration.
 
-   ```properties
-   KEYSTORE_FILE=/path/to/release.keystore
-   KEYSTORE_PASSWORD=********
-   KEY_ALIAS=********
-   KEY_PASSWORD=********
-   ```
+- **Dashboard hand-off** — Opens the connected web dashboard with the member's session, so
+  detailed views are available without a separate login.
 
-   `local.properties` is not checked into version control — keep these values out of git.
+## Built With
 
-## Firebase Setup
-
-The app uses Firebase (Cloud Messaging). The Firebase config file is not committed.
-
-1. In the [Firebase console](https://console.firebase.google.com/), create/open the
-   project and register an Android app with package name `com.yourwelnes.yourswelnes`.
-2. Download `google-services.json`.
-3. Place it at `app/google-services.json`.
-
-The Google Services Gradle plugin reads this file at build time.
-
-## Build & Run
-
-Run from the project root.
-
-**Debug build / install on a connected device:**
-
-```bash
-./gradlew assembleDebug
-./gradlew installDebug
-```
-
-**Run tests:**
-
-```bash
-./gradlew testDebugUnitTest
-```
-
-## Release Builds (APK / AAB)
-
-Ensure the signing credentials (see Environment Setup) are present in `local.properties`.
-
-**APK:**
-
-```bash
-./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk
-```
-
-**App Bundle (AAB) — for Play Store upload:**
-
-```bash
-./gradlew bundleRelease
-# Output: app/build/outputs/bundle/release/app-release.aab
-```
+Kotlin · Jetpack Compose · Material 3 · Hilt · Room · Retrofit/OkHttp ·
+WorkManager · Firebase Cloud Messaging · CameraX · Google Play Services Location
