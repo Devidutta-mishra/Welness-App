@@ -1,6 +1,7 @@
 package com.example.yourswelnes.feature.home.data
 
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.feature.home.data.api.ClubApi
 import com.example.yourswelnes.feature.home.data.mapper.toDomain
 import com.example.yourswelnes.feature.home.model.ClubDetails
@@ -23,6 +24,7 @@ class ClubRepositoryImpl @Inject constructor(
             if (response.success == true && domain.clubName.isNotBlank()) {
                 // Valid club from server — cache it as the new source of truth.
                 locationPrefs.saveClubInfo(domain.id, domain.latitude, domain.longitude, domain.clubName)
+                CrashReporter.setClubId(domain.id)
                 Result.success(domain)
             } else {
                 // Server EXPLICITLY reports no valid club for this user (reachable, but no club

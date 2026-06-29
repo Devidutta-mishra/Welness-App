@@ -60,6 +60,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import timber.log.Timber
 
 @Composable
@@ -202,6 +203,7 @@ private fun LiveCameraPreview(
                 preview.setSurfaceProvider(previewView.surfaceProvider)
             } catch (e: Exception) {
                 Timber.e(e, "CameraX binding failed")
+                CrashReporter.logNonFatal(e, "CameraX binding failed")
             }
         }, ContextCompat.getMainExecutor(context))
 

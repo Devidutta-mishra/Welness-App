@@ -14,6 +14,7 @@ import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
 import com.example.yourswelnes.core.location.LocationScheduler
 import com.example.yourswelnes.core.location.LocationServiceState
 import com.example.yourswelnes.core.location.TrackingAlarmScheduler
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.core.service.LocationForegroundService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -121,6 +122,7 @@ class LocationWatchdogWorker @AssistedInject constructor(
                 "battery optimization exemption required. " +
                 "Next app open will prompt the user via LocationPermissionScreen."
             )
+            CrashReporter.logNonFatal(e, "Watchdog failed to restart location service")
         }
 
         Timber.tag(TAG).i("WORKER FINISHED | LocationWatchdogWorker complete")

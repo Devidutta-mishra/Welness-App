@@ -2,6 +2,7 @@ package com.example.yourswelnes.feature.auth.data
 
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.FcmPreferencesDataStore
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.feature.auth.model.AuthUser
 import com.example.yourswelnes.feature.auth.data.api.AuthApi
 import com.example.yourswelnes.feature.auth.data.dto.LoginRequestDto
@@ -54,6 +55,7 @@ class AuthRepositoryImpl @Inject constructor(
             redirect = response.redirect?.trim()?.takeIf { it.isNotEmpty() }
         )
         authPreferences.saveAuthData(token = token, user = user)
+        CrashReporter.setUserContext(user.id, null)
         Timber.i("Login succeeded")
         user
     }.recoverCatching { throw it.toFriendlyAuthException("Unable to sign in. Please try again.") }
@@ -75,8 +77,10 @@ class AuthRepositoryImpl @Inject constructor(
             Timber.tag(TAG).i("USER LOGOUT TOKEN CLEARED: FCM token deleted from Firebase")
         } catch (e: Exception) {
             Timber.tag(TAG).w("FCM token deletion issue (non-fatal): ${e.message}")
+            CrashReporter.logNonFatal(e, "FCM token deletion failed during logout")
         }
 
+        CrashReporter.clearUserContext()
         authPreferences.clearAuthData()
     }
 

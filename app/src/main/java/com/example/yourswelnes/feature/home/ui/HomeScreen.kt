@@ -3,6 +3,7 @@ package com.example.yourswelnes.feature.home.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +59,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.SubcomposeAsyncImage
+import com.example.yourswelnes.BuildConfig
 import com.example.yourswelnes.R
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.feature.camera.ui.GroupSelectionDialog
 import com.example.yourswelnes.feature.camera.ui.GroupSelectionViewModel
 import com.example.yourswelnes.feature.location.ui.LocationStatusViewModel
@@ -265,7 +268,16 @@ private fun HomeTopBar(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier
+                    .size(40.dp)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            if (BuildConfig.DEBUG) {
+                                CrashReporter.triggerTestCrash()
+                            }
+                        }
+                    ),
                 shape = RectangleShape,
                 color = Color.White,
                 shadowElevation = 2.dp

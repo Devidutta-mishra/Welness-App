@@ -7,6 +7,8 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.FcmPreferencesDataStore
+import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.core.location.TrackingAlarmScheduler
 import com.example.yourswelnes.core.service.LocationForegroundService
 import com.example.yourswelnes.core.notification.AppNotificationManager
@@ -33,6 +35,7 @@ class YourswelnesApplication : Application(), Configuration.Provider {
     @Inject lateinit var appNotificationManager: AppNotificationManager
     @Inject lateinit var authPrefs: AuthPreferencesDataStore
     @Inject lateinit var fcmPrefs: FcmPreferencesDataStore
+    @Inject lateinit var locationPrefs: LocationPreferencesDataStore
     @Inject lateinit var trackingAlarmScheduler: TrackingAlarmScheduler
 
     override val workManagerConfiguration: Configuration
@@ -45,8 +48,10 @@ class YourswelnesApplication : Application(), Configuration.Provider {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+        CrashReporter.initialize(BuildConfig.DEBUG)
         locationNotificationManager.createChannels()
         appNotificationManager.createChannel()
+        setupCrashlyticsContext()
 
         val workManager = WorkManager.getInstance(this)
         LocationUploadWorker.schedule(workManager)
@@ -116,6 +121,25 @@ class YourswelnesApplication : Application(), Configuration.Provider {
                 Timber.tag("App").w("Cannot start LocationForegroundService from background context — ${e.message}")
                 Timber.tag("App").w("Scheduling immediate upload worker as fallback; START_STICKY will restore collection")
                 LocationUploadWorker.scheduleOneTime(workManager)
+                // ForegroundServiceStartNotAllowedException is an expected OS restriction on
+                // API 31+, not a real crash — skip Crashlytics to avoid flooding non-fatals.
+                if (e.javaClass.name != "android.app.ForegroundServiceStartNotAllowedException") {
+                    CrashReporter.logNonFatal(e, "Failed to start LocationForegroundService")
+                }
+            }
+        }
+    }
+
+    private fun setupCrashlyticsContext() {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val userId = authPrefs.getUserId()
+                if (userId != null) {
+                    val clubId = locationPrefs.getClubId()
+                    CrashReporter.setUserContext(userId, clubId)
+                }
+            } catch (e: Exception) {
+                Timber.tag("App").e(e, "Failed to setup Crashlytics context")
             }
         }
     }

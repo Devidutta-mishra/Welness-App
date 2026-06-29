@@ -1,6 +1,7 @@
 package com.example.yourswelnes.feature.location.data
 
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.feature.location.data.api.LocationApi
 import com.example.yourswelnes.feature.location.data.mapper.toDomain
 import com.example.yourswelnes.feature.location.model.LocationConfig
@@ -48,6 +49,7 @@ class LocationConfigRepositoryImpl @Inject constructor(
                 "NO INTERNET | Schedule API failed — " +
                 "TRACKING WINDOW LOADED from cache: start=$cachedStart end=$cachedEnd | reason=${error.message}"
             )
+            CrashReporter.logNonFatal(error, "Schedule API failed - falling back to cache")
         }
 
         return result

@@ -2,6 +2,7 @@ package com.example.yourswelnes.core.location
 
 import com.example.yourswelnes.core.datastore.AuthPreferencesDataStore
 import com.example.yourswelnes.core.datastore.LocationPreferencesDataStore
+import com.example.yourswelnes.core.monitoring.CrashReporter
 import com.example.yourswelnes.feature.location.data.api.LocationApi
 import com.example.yourswelnes.feature.location.data.dto.LocationItemDto
 import com.example.yourswelnes.feature.location.data.dto.LocationUploadRequestDto
@@ -110,6 +111,7 @@ class LocationUploader @Inject constructor(
 
             val response = runCatching { locationApi.storeLocations(payload) }.getOrElse { e ->
                 Timber.tag(TAG).e(e, "NO INTERNET | Upload FAILED (network/server error) — will retry on next tick")
+                CrashReporter.logNonFatal(e, "Location upload API failure")
                 failed = true
                 null
             }
